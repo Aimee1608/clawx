@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.devdata/
+.devconfig/
+*.log
+.DS_Store
+.env
+pnpm-lock.yaml

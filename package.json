@@ -1,0 +1,70 @@
+{
+  "name": "clawx",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "三端互通的 Claude Code 代理：把 Claude Code CLI 跑在持久化 tmux session 里，同时从终端、内嵌 web 控制台、Feishu(Lark) 话题对话同一个 claude REPL — 输入互通、回复实时投递。带 cron、Stop hook 回写、reactions 进度指示。",
+  "keywords": [
+    "feishu",
+    "lark",
+    "claude",
+    "claude-code",
+    "bot",
+    "tmux",
+    "clawx"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Aimee1608/clawx.git"
+  },
+  "bin": {
+    "clawx": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "dev": "tsx watch src/cli.ts start",
+    "start": "tsx src/cli.ts start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc",
+    "web:install": "pnpm -C web install",
+    "web:dev": "pnpm -C web dev",
+    "web:build": "pnpm -C web build",
+    "prepublishOnly": "pnpm build"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.121",
+    "@larksuiteoapi/node-sdk": "^1.61.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "axios": "^1.7.9",
+    "chalk": "^5.3.0",
+    "cron-parser": "^5.5.0",
+    "dotenv": "^16.4.7",
+    "js-yaml": "^4.1.1",
+    "open": "^11.0.0",
+    "pm2": "^6.0.14",
+    "uuid": "^10.0.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@midscene/web": "^1.7.5",
+    "@playwright/test": "1.59.1",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.10.5",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.5",
+    "zod-to-json-schema": "^3.25.2"
+  }
+}
