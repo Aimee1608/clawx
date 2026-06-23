@@ -118,6 +118,12 @@ export interface WebServerOptions {
     userSource: SendSource
     messageCount: number
   }) => Promise<void> | void
+  /** Streams a single INTERMEDIATE assistant block to the thread mid-turn
+   * (opt-in via CLAWX_STREAM_REPLIES). Called per settled non-final block as
+   * it lands in the transcript; the final block still goes through tmuxFanout
+   * at turn-done, so the two are disjoint. Best-effort — errors are logged,
+   * never block the turn. */
+  tmuxStreamBlock?: (args: { entry: TmuxSessionEntry; text: string }) => Promise<void> | void
   /** Lark thread helper. When wired (WS mode), the POST
    * /api/tmux-sessions endpoint auto-creates a Lark thread for each
    * new session so bot/web/cli all yield uniformly-routable sessions.
@@ -459,6 +465,128 @@ export function startWebServer(opts: WebServerOptions): http.Server {
       if (turnDoneTail.get(key) === stored) turnDoneTail.delete(key)
     })
     return run
+  }
+
+  // ── Mid-turn reply streaming (opt-in: CLAWX_STREAM_REPLIES) ──────────
+  // claude appends each assistant message to its transcript jsonl as a
+  // complete line while the turn runs (narration between tool calls, then
+  // the final answer). By default the thread only gets the FINAL block at
+  // turn-done. When enabled, a per-session poller tails the transcript and
+  // streams each settled INTERMEDIATE block — any assistant block that
+  // already has a newer line after it, so it's complete and not the in-flight
+  // final. The final block is left to turn-done, so streamed + final are
+  // disjoint and nothing is sent twice. claude only (codex's notify path is
+  // more fragile and out of scope).
+  const STREAM_ENABLED = /^(1|true|yes|on)$/i.test(process.env.CLAWX_STREAM_REPLIES ?? '')
+  const STREAM_POLL_MS = Math.max(200, Number(process.env.CLAWX_STREAM_POLL_MS) || 700)
+  const STREAM_MAX_MS = Math.max(60_000, Number(process.env.CLAWX_STREAM_MAX_MS) || 1_800_000)
+  // Per poll we read only the LAST window of the transcript, not the whole
+  // file — a long session's jsonl is multi-MB and re-reading it every poll
+  // would churn CPU/GC. One turn's blocks always sit at the tail, and the
+  // sinceMs + uuid filters drop anything older that the window happens to
+  // include, so a bounded window is both cheap and correct.
+  const STREAM_TAIL_BYTES = Math.max(64 * 1024, Number(process.env.CLAWX_STREAM_TAIL_BYTES) || 512 * 1024)
+  interface ReplyStreamer {
+    /** Stops the poll loop and resolves with the uuids already streamed, so
+     * turn-done can exclude them and never re-send a block (robust even when
+     * the final assistant block isn't the transcript's last line). */
+    stop(): Promise<Set<string>>
+  }
+  const streamers = new Map<string, ReplyStreamer>()
+
+  function stopReplyStreamer(sessionId: string): Promise<Set<string>> {
+    const s = streamers.get(sessionId)
+    if (!s) return Promise.resolve(new Set<string>())
+    streamers.delete(sessionId)
+    return s.stop()
+  }
+
+  function startReplyStreamer(entry: TmuxSessionEntry, sinceMs: number): void {
+    if (!STREAM_ENABLED || (entry.agentKind ?? 'claude') !== 'claude' || !opts.tmuxStreamBlock) return
+    const sessionId = entry.sessionId
+    void stopReplyStreamer(sessionId) // a new turn supersedes the prior streamer
+    const sent = new Set<string>()
+    const deadline = Date.now() + STREAM_MAX_MS
+    let active = true
+    let lastSize = -1
+    let inFlight: Promise<void> = Promise.resolve()
+    const tick = async (): Promise<void> => {
+      const located = locateAgentTranscript(
+        'claude',
+        entry.claudeUuid ?? entry.agentSessionId,
+        entry.transcriptPath,
+      )
+      if (!located?.jsonlPath) return
+      let size = 0
+      try {
+        size = fs.statSync(located.jsonlPath).size
+      } catch {
+        return // file not there yet / vanished — skip this round
+      }
+      if (size === lastSize) return // nothing appended since last poll
+      lastSize = size
+      const start = Math.max(0, size - STREAM_TAIL_BYTES)
+      let raw = ''
+      try {
+        const fd = fs.openSync(located.jsonlPath, 'r')
+        try {
+          const len = size - start
+          const buf = Buffer.alloc(len)
+          fs.readSync(fd, buf, 0, len, start)
+          raw = buf.toString('utf8')
+        } finally {
+          fs.closeSync(fd)
+        }
+      } catch {
+        return
+      }
+      // If we started mid-file, the first line is a fragment — drop it.
+      if (start > 0) {
+        const nl = raw.indexOf('\n')
+        raw = nl >= 0 ? raw.slice(nl + 1) : ''
+      }
+      const msgs = readClaudeMessagesFromRaw(raw)
+      // Only blocks BEFORE the last line are settled-intermediate; the last
+      // line may still be the in-flight / final block → that's turn-done's.
+      for (let i = 0; i < msgs.length - 1; i++) {
+        if (!active) return
+        const m = msgs[i]!
+        if (m.role !== 'assistant' || m.isError || !m.text.trim()) continue
+        if ((Date.parse(m.timestamp) || 0) <= sinceMs) continue
+        if (sent.has(m.uuid)) continue
+        sent.add(m.uuid)
+        try {
+          await opts.tmuxStreamBlock!({ entry, text: m.text.trim() })
+        } catch (err: any) {
+          log.warn('reply-stream: post failed', { sessionId, err: err?.message ?? String(err) })
+        }
+      }
+    }
+    const loop = async (): Promise<void> => {
+      while (active && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, STREAM_POLL_MS))
+        if (!active) break
+        inFlight = tick()
+        try {
+          await inFlight
+        } catch {
+          /* keep polling — a transient read/post error shouldn't kill the stream */
+        }
+      }
+      streamers.delete(sessionId)
+    }
+    streamers.set(sessionId, {
+      stop: async () => {
+        active = false
+        try {
+          await inFlight
+        } catch {
+          /* ignore */
+        }
+        return sent
+      },
+    })
+    void loop()
   }
 
   const server = http.createServer(async (req, res) => {
@@ -1004,6 +1132,9 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         const sid = decodeURIComponent(tmuxDelMatch[1]!)
         // Snapshot the thread info BEFORE kill() drops the store record.
         const doomed = tmuxSessionStore.get(sid)
+        // Killed mid-turn: stop the streamer or its poll loop would outlive
+        // the session (turn-done never fires for a killed session).
+        await stopReplyStreamer(sid)
         try {
           await tmuxOrchestrator.kill(sid)
           if (doomed?.threadId && doomed.rootMessageId && opts.larkThread) {
@@ -1084,6 +1215,12 @@ export function startWebServer(opts: WebServerOptions): http.Server {
             log.warn('tmux turn-start: reaction add failed', { sessionId: entry.sessionId, emoji, err: err?.message ?? String(err) })
           }
         }
+        // Begin tailing this turn's transcript so settled intermediate blocks
+        // stream to the thread as they land (no-op unless CLAWX_STREAM_REPLIES
+        // is on). Same boundary as turn-done so we only consider THIS turn.
+        const streamSince =
+          (entry.lastTurnAt ? Date.parse(entry.lastTurnAt) : 0) || Date.parse(entry.createdAt) || 0
+        startReplyStreamer(entry, streamSince)
         return { status: 200, body: { ok: true } }
       }
 
@@ -1121,6 +1258,10 @@ export function startWebServer(opts: WebServerOptions): http.Server {
           }
         }
         if (!entry) return { status: 200, body: { ok: true, matched: false } }
+        // The turn is ending — stop tailing it and take the set of blocks the
+        // streamer already sent, so the gather below excludes them (no block
+        // is ever delivered twice, even in odd transcript orderings).
+        const streamedUuids = await stopReplyStreamer(entry.sessionId)
         if (args.transcriptPath && entry.transcriptPath !== args.transcriptPath) {
           entry = tmuxSessionStore.patch(entry.sessionId, { transcriptPath: args.transcriptPath })
         }
@@ -1150,8 +1291,11 @@ export function startWebServer(opts: WebServerOptions): http.Server {
               for (const m of messages) {
                 const ts = Date.parse(m.timestamp) || 0
                 if (ts <= sinceMs) continue
-                if (m.role === 'assistant' && m.text.trim()) turnAssistant.push(m)
-                else if (m.role === 'user' && m.text.trim()) turnUser.push(m.text)
+                if (m.role === 'assistant' && m.text.trim()) {
+                  // Skip blocks already streamed mid-turn so they aren't
+                  // re-sent as part of the final fanout.
+                  if (!streamedUuids.has(m.uuid)) turnAssistant.push(m)
+                } else if (m.role === 'user' && m.text.trim()) turnUser.push(m.text)
               }
               const last = turnAssistant[turnAssistant.length - 1]
               const lastIsError = !!last?.isError

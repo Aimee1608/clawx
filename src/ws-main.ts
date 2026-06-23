@@ -539,6 +539,19 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
             assistantText,
           )
         },
+        // Mid-turn streaming of settled intermediate assistant blocks
+        // (opt-in: CLAWX_STREAM_REPLIES). Same blue card as a normal reply.
+        tmuxStreamBlock: async ({ entry, text }) => {
+          if (!entry.threadId || !entry.rootMessageId || !text.trim()) return
+          await postWithRetry(
+            (body) =>
+              larkThread.postCardInThread({
+                rootMessageId: entry.rootMessageId!,
+                card: buildBotReplyCard({ text: body, kind: 'normal' }),
+              }),
+            text,
+          )
+        },
       })
       srv.on('error', (err) => log.warn('web ui error', { err: err.message }))
 
