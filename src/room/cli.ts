@@ -122,7 +122,7 @@ function printDetachSummary(room: { id: string; label?: string; cwd: string; thr
   if (room.threadId) console.log(`  飞书话题:  ${room.threadId}`)
   console.log(`  重进围观:  clawx room attach ${room.id}`)
   console.log(`  列出房间:  clawx room ls`)
-  console.log(`  关闭房间:  clawx room kill ${room.id}`)
+  console.log(`  关闭房间:  clawx kill ${room.id}`)
   console.log(`  清理死房:  clawx room prune`)
   console.log('')
 }
@@ -224,43 +224,10 @@ async function cmdRoom(positionals: string[], opts: Record<string, string>): Pro
 
   if (sub === 'kill') {
     const id = positionals[1] ?? opts.id
-    const room = id ? loadRoom(id) : null
-    if (!room || !id) {
+    if (!id || !(await killRoomById(id))) {
       console.error(`✗ room ${id ?? '?'} not found`)
       process.exit(1)
     }
-    // Farewell ping: before tearing down, post a closing note into the topic
-    // so the Feishu thread shows the room was deliberately closed (parity
-    // with the single-agent solo kill). Best-effort — a Feishu hiccup must
-    // never block the actual teardown below.
-    if (room.larkMode === 'topic' && room.threadRootId) {
-      try {
-        const cfg = loadLarkApps()
-        if (cfg) {
-          await new LarkFleet(cfg)
-            .reader()
-            .replyInThread(
-              room.threadRootId,
-              `🔚 房间已关闭(rid ${id})。tmux 会话与桥接已停;要继续协作请用 clawx room 新建一个。`,
-            )
-        }
-      } catch {
-        /* best-effort */
-      }
-    }
-    const pids = new Set([room.bridgePid, readBridgeLockPid(id)])
-    for (const pid of pids) {
-      if (!pid) continue
-      try {
-        process.kill(pid, 'SIGTERM')
-      } catch {
-        /* already gone */
-      }
-    }
-    releaseBridgeLock(id)
-    await killRoom(room)
-    await updateRoom(id, (r) => ({ ...r, status: 'ended' as const }))
-    console.log(`✓ 房间 ${id} 已关(tmux + 桥 已停)`)
     return
   }
 
@@ -304,6 +271,45 @@ async function cmdRoom(positionals: string[], opts: Record<string, string>): Pro
   }
 
   console.log(ROOM_USAGE)
+}
+
+/** Tear down a room by id: farewell ping into the topic → kill the bridge
+ * pid(s) → kill the tmux session → mark the room `ended`. Returns false
+ * WITHOUT side effects when no room owns this id, so the unified top-level
+ * `clawx kill` can probe rooms first and fall through to a solo session.
+ * Best-effort on the Feishu ping — a hiccup there must never block teardown. */
+export async function killRoomById(id: string): Promise<boolean> {
+  const room = loadRoom(id)
+  if (!room) return false
+  if (room.larkMode === 'topic' && room.threadRootId) {
+    try {
+      const cfg = loadLarkApps()
+      if (cfg) {
+        await new LarkFleet(cfg)
+          .reader()
+          .replyInThread(
+            room.threadRootId,
+            `🔚 房间已关闭(rid ${id})。tmux 会话与桥接已停;要继续协作请用 clawx room 新建一个。`,
+          )
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+  const pids = new Set([room.bridgePid, readBridgeLockPid(id)])
+  for (const pid of pids) {
+    if (!pid) continue
+    try {
+      process.kill(pid, 'SIGTERM')
+    } catch {
+      /* already gone */
+    }
+  }
+  releaseBridgeLock(id)
+  await killRoom(room)
+  await updateRoom(id, (r) => ({ ...r, status: 'ended' as const }))
+  console.log(`✓ 房间 ${id} 已关(tmux + 桥 已停)`)
+  return true
 }
 
 export async function runRoomCli(argv: string[]): Promise<void> {

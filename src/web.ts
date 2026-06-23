@@ -436,6 +436,31 @@ export function startWebServer(opts: WebServerOptions): http.Server {
   const tmuxOrchestrator =
     opts.tmuxOrchestrator ?? createTmuxOrchestrator({ store: tmuxSessionStore })
 
+  // Serialize turn-done per (agentKind, session) so the sinceMs/lastTurnAt
+  // dedup that's meant to make a replayed turn-done a no-op actually holds.
+  // Two paths can fire turn-done for the SAME turn near-simultaneously — the
+  // agent's Stop hook AND the repl-watchdog's recovery — and each captures the
+  // turn boundary (sinceMs) at its start, BEFORE the other commits the new
+  // lastTurnAt. Without serialization both read the stale boundary and the
+  // reply fans out to Lark twice (observed on codex, whose late Stop hook
+  // races the watchdog recover). Keyed so different sessions still run
+  // concurrently; same-session calls queue and the second sees the boundary
+  // the first committed → its assistantText is empty → fanout is a no-op.
+  const turnDoneTail = new Map<string, Promise<unknown>>()
+  function serializeTurnDone<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const prev = turnDoneTail.get(key) ?? Promise.resolve()
+    const run = prev.then(fn, fn) // run regardless of the previous outcome
+    const stored = run.then(
+      () => {},
+      () => {},
+    )
+    turnDoneTail.set(key, stored)
+    void stored.then(() => {
+      if (turnDoneTail.get(key) === stored) turnDoneTail.delete(key)
+    })
+    return run
+  }
+
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost')
 
@@ -1062,7 +1087,20 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         return { status: 200, body: { ok: true } }
       }
 
-      async function handleAgentTurnDone(args: {
+      function handleAgentTurnDone(args: {
+        agentKind: AgentKind
+        agentSessionId: string
+        transcriptPath?: string
+        recovered?: boolean
+      }): Promise<{ status: number; body: unknown }> {
+        // Per-session lock: serialize so the Stop hook and the watchdog
+        // recover can't both deliver the same turn (see serializeTurnDone).
+        return serializeTurnDone(`${args.agentKind}:${args.agentSessionId}`, () =>
+          handleAgentTurnDoneInner(args),
+        )
+      }
+
+      async function handleAgentTurnDoneInner(args: {
         agentKind: AgentKind
         agentSessionId: string
         transcriptPath?: string
@@ -1130,6 +1168,13 @@ export function startWebServer(opts: WebServerOptions): http.Server {
                   ? (codexCompleted?.size ?? 0) > 0
                   : last.stopReason === 'end_turn' || last.stopReason === 'stop_sequence' || last.stopReason === 'max_tokens'))
               if (turnComplete) break
+              // Nothing new past the boundary — no assistant reply to wait on
+              // a task_complete for, and no pending user turn to hold for.
+              // Happens when a duplicate turn-done lands after the boundary
+              // already advanced (the per-session lock serializes these, so
+              // this is the deduped no-op call). Looping can't surface
+              // anything; break now instead of polling the full ~7.5s.
+              if (last === undefined && turnUser.length === 0) break
               if (attempt === 15) break
               await new Promise((r) => setTimeout(r, 500))
             }

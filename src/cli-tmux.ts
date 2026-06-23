@@ -196,25 +196,65 @@ export async function runTmux(opts: RunTmuxOptions = {}): Promise<void> {
         .format(new Date(entry.createdAt))
         .replace(',', '')
     : '—'
+  // Did the tmux session survive the detach? If the REPL process exited
+  // (you /exit'd, or the agent died on launch — e.g. the codex update-prompt
+  // hang), the session is GONE and `tmux attach` would just print "can't
+  // find session". So probe liveness and only show Re-attach when it's real;
+  // otherwise say "exited" and point at Resume, which respawns the same
+  // conversation (--resume) and re-binds the Lark thread.
+  const stillAlive =
+    spawnSync(tmuxCmd, ['has-session', '-t', entry.tmuxName], { stdio: 'ignore' }).status === 0
+  // `entry` is the creation-time snapshot. A codex session id is minted by
+  // codex itself and backfilled into the store only AFTER it starts, so at
+  // creation `agentSessionId` is still pending — without a refresh the Resume
+  // line would never show it. Re-fetch the live entry from the daemon so the
+  // codex resume id surfaces. (claude already carries its id from creation,
+  // so this just re-confirms the same value; a daemon hiccup falls back to it.)
+  let resumeId = entry.agentSessionId ?? entry.claudeUuid
+  try {
+    const live = await daemonJson(host, port, 'GET', '/api/tmux-sessions')
+    const sessions =
+      (live.ok &&
+        (
+          live.body as {
+            sessions?: Array<{ sessionId: string; agentSessionId?: string; claudeUuid?: string }>
+          }
+        )?.sessions) ||
+      []
+    const fresh = sessions.find((s) => s.sessionId === entry.sessionId)
+    if (fresh) resumeId = fresh.agentSessionId ?? fresh.claudeUuid ?? resumeId
+  } catch {
+    /* daemon hiccup — keep the creation-time id */
+  }
   process.stdout.write('\n')
-  process.stdout.write(`✓ Detached from "${displayTitle}"\n`)
+  process.stdout.write(
+    stillAlive
+      ? `✓ Detached from "${displayTitle}"\n`
+      : `✓ Session "${displayTitle}" exited (tmux session closed)\n`,
+  )
   process.stdout.write(`  sid: ${entry.sessionId}\n`)
   process.stdout.write(`  cwd: ${entry.cwd}\n`)
   process.stdout.write(`  created: ${createdShown} CST\n`)
-  process.stdout.write(`  Re-attach:  tmux attach -t ${entry.tmuxName}\n`)
-  if (entry.agentSessionId || entry.claudeUuid) {
-    // Once the REPL exits (e.g. you /exit to pick up a new model) the
-    // tmux session is gone and Re-attach no longer works — this respawns
-    // a fresh process on the SAME conversation: context preserved via
-    // --resume, and clawx re-binds this same Lark thread.
+  if (stillAlive) {
+    process.stdout.write(`  Re-attach:  tmux attach -t ${entry.tmuxName}\n`)
+  }
+  if (resumeId) {
+    // Respawns a fresh process on the SAME conversation: context preserved
+    // via --resume, and clawx re-binds this same Lark thread.
     process.stdout.write(
-      `  Resume:     clawx tmux --agent ${entry.agentKind ?? 'claude'} --resume ${entry.agentSessionId ?? entry.claudeUuid}\n`,
+      `  Resume:     clawx solo --agent ${entry.agentKind ?? 'claude'} --resume ${resumeId}\n`,
+    )
+  } else if (!stillAlive) {
+    // Session died before it ever bound an agent session id (nothing to
+    // --resume) — the only way forward is a fresh start in the same cwd.
+    process.stdout.write(
+      `  Recreate:   clawx solo ${JSON.stringify(entry.cwd)} --agent ${entry.agentKind ?? 'claude'}\n`,
     )
   }
   // Tear the session down completely: kills the tmux session if it's
   // still around, drops the store record, and posts a 🧹 notice into the
   // Lark thread.
-  process.stdout.write(`  清理/Kill:  clawx tmux kill ${entry.sessionId}\n`)
+  process.stdout.write(`  清理/Kill:  clawx kill ${entry.sessionId}\n`)
   if (entry.threadId) {
     process.stdout.write(`  Lark 话题:   ${entry.threadId}\n`)
   }
@@ -297,7 +337,7 @@ export async function runTmuxAdmin(
   if (action === 'kill') {
     const target = sid?.trim()
     if (!target) {
-      process.stderr.write('✗ usage: clawx tmux kill <sid>\n')
+      process.stderr.write('✗ usage: clawx kill <sid>\n')
       process.exit(1)
     }
     const r = await daemonJson(host, port, 'DELETE', `/api/tmux-sessions/${encodeURIComponent(target)}`)

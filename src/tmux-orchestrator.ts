@@ -188,6 +188,12 @@ function buildAgentLaunch(args: {
     }
   }
 
+  // Codex (both resume + fresh) launches with `-c check_for_update_on_startup
+  // =false`. Without it, codex >= 0.140 opens with a blocking "Update
+  // available — 1. Update now / 2. Skip" prompt that our claude-oriented
+  // startup-dialog dismissal doesn't recognize, so the REPL hangs (or exits
+  // if the prompt gets stray input) and the tmux session dies — the
+  // "codex 无响应" failure where Re-attach then can't find the session.
   if (args.resumeId?.trim()) {
     const id = args.resumeId.trim()
     return {
@@ -195,7 +201,8 @@ function buildAgentLaunch(args: {
       bannerId: id,
       pendingSessionId: false,
       cmd:
-        `exec ${shQ(args.codexCmd)} resume ${shQ(id)} ` +
+        `exec ${shQ(args.codexCmd)} -c check_for_update_on_startup=false ` +
+        `resume ${shQ(id)} ` +
         `--cd ${shQ(args.cwd)} ` +
         `--dangerously-bypass-approvals-and-sandbox ` +
         `--dangerously-bypass-hook-trust ` +
@@ -207,7 +214,7 @@ function buildAgentLaunch(args: {
     bannerId: '(pending)',
     pendingSessionId: true,
     cmd:
-      `exec ${shQ(args.codexCmd)} ` +
+      `exec ${shQ(args.codexCmd)} -c check_for_update_on_startup=false ` +
       `--cd ${shQ(args.cwd)} ` +
       `--dangerously-bypass-approvals-and-sandbox ` +
       `--dangerously-bypass-hook-trust ` +

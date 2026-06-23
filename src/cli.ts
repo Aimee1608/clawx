@@ -92,6 +92,7 @@ function printUsage(): void {
       '  clawx tmux kill <sid>               Kill a session + drop its store record.',
       '  clawx tmux prune                    Remove all dead (zombie) session records.',
       '  clawx solo [...]                    Alias for `clawx tmux` (single-agent).',
+      '  clawx kill <id>                     Kill any session OR room by id (solo + room).',
       '  clawx room [cwd] --template <name>  Multi-agent room (Agent Teams + Lark topic).',
       '  clawx room ls|revive|kill|templates Manage rooms (templates = list templates).',
       '  clawx install-tmux-hook             Register the Stop hook in',
@@ -263,6 +264,24 @@ async function main(): Promise<void> {
       // its own argv slice, independent of this CLI's option schema.
       const mod = await import('./room/cli.js')
       await mod.runRoomCli(process.argv.slice(3))
+      return
+    }
+    case 'kill': {
+      // Unified teardown by id, so callers don't have to remember whether
+      // an id is a solo session (sid) or a room (rid). Probe rooms first —
+      // killRoomById is side-effect-free on a miss — then fall back to the
+      // daemon-owned solo session (runTmuxAdmin prints the not-found error
+      // when neither owns the id). `clawx solo kill` / `clawx room kill`
+      // stay as the explicit per-kind forms.
+      const id = positionals[1]
+      if (!id) {
+        process.stderr.write('✗ usage: clawx kill <sid|rid>\n')
+        process.exit(1)
+      }
+      const roomMod = await import('./room/cli.js')
+      if (await roomMod.killRoomById(id)) return
+      const tmuxMod = await import('./cli-tmux.js')
+      await tmuxMod.runTmuxAdmin('kill', id)
       return
     }
     case 'install-tmux-hook': {
