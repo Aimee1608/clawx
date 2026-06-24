@@ -584,6 +584,10 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         const m = candidates[i]!
         if (sent.has(m.uuid)) continue
         sent.add(m.uuid)
+        // One line per streamed block. A repeated uuid here = two streamers
+        // double-posting (the bug this guards against); each uuid should
+        // appear exactly once per turn.
+        log.info('reply-stream posted', { sessionId, uuid: m.uuid, chars: m.text.length })
         try {
           await opts.tmuxStreamBlock!({ entry, text: m.text.trim() })
         } catch (err: any) {
