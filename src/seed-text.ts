@@ -86,6 +86,10 @@ export function buildAskQuestionCard(args: {
 export function buildBotReplyCard(args: {
   text: string
   kind?: 'normal' | 'warning' | 'error'
+  /** Mid-turn streamed block (not the final answer). Renders a turquoise
+   * card with a 💭 header so the thread visibly separates "process" blocks
+   * from the final blue reply that lands at turn-done. */
+  intermediate?: boolean
 }): Record<string, unknown> {
   const kind = args.kind ?? 'normal'
   // First non-empty line, stripped of leading markdown markers and
@@ -108,6 +112,9 @@ export function buildBotReplyCard(args: {
     title =
       kind === 'error' ? 'Claude 报错' : kind === 'warning' ? 'Claude 回复 (含警告)' : 'Claude 回复'
   }
+  // Mid-turn block: mark it visibly as "process" so it never reads as the
+  // final answer. Prefix the header and (below) recolor the card to turquoise.
+  if (args.intermediate) title = `💭 ${title}`
   // v2 markdown handles standard markdown directly — DO NOT do the
   // single-\n → double-\n transformation we needed for v1 lark_md;
   // doing so would inject blank rows into tables and break list flow.
@@ -115,7 +122,13 @@ export function buildBotReplyCard(args: {
     args.text.length > 8000
       ? `${args.text.slice(0, 8000)}\n\n…（已截断 ${args.text.length - 8000} 字符）`
       : args.text
-  const template = kind === 'error' ? 'red' : kind === 'warning' ? 'yellow' : 'blue'
+  const template = args.intermediate
+    ? 'turquoise'
+    : kind === 'error'
+      ? 'red'
+      : kind === 'warning'
+        ? 'yellow'
+        : 'blue'
   return {
     schema: '2.0',
     header: {

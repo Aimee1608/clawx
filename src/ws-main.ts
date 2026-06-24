@@ -540,14 +540,16 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
           )
         },
         // Mid-turn streaming of settled intermediate assistant blocks
-        // (opt-in: CLAWX_STREAM_REPLIES). Same blue card as a normal reply.
+        // (opt-in: CLAWX_STREAM_REPLIES). Rendered as a turquoise 💭 card so
+        // the thread visibly separates these "process" blocks from the final
+        // blue reply that tmuxFanout posts at turn-done.
         tmuxStreamBlock: async ({ entry, text }) => {
           if (!entry.threadId || !entry.rootMessageId || !text.trim()) return
           await postWithRetry(
             (body) =>
               larkThread.postCardInThread({
                 rootMessageId: entry.rootMessageId!,
-                card: buildBotReplyCard({ text: body, kind: 'normal' }),
+                card: buildBotReplyCard({ text: body, kind: 'normal', intermediate: true }),
               }),
             text,
           )
