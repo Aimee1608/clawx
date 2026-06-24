@@ -510,7 +510,29 @@ export function startWebServer(opts: WebServerOptions): http.Server {
     let active = true
     let lastSize = -1
     let inFlight: Promise<void> = Promise.resolve()
+    // Identity token: ONLY the streamer currently registered in `streamers`
+    // for this session may send. A superseded / orphaned streamer — left over
+    // from a daemon restart, a supersede race, or a missed turn-done — sees it
+    // is no longer the registered one and bails, so two streamers can never
+    // double-post the same turn.
+    const self: ReplyStreamer = {
+      stop: async () => {
+        active = false
+        try {
+          await inFlight
+        } catch {
+          /* ignore */
+        }
+        return sent
+      },
+    }
+    streamers.set(sessionId, self)
+    const isCurrent = (): boolean => streamers.get(sessionId) === self
     const tick = async (): Promise<void> => {
+      if (!isCurrent()) {
+        active = false
+        return
+      }
       const located = locateAgentTranscript(
         'claude',
         entry.claudeUuid ?? entry.agentSessionId,
@@ -545,14 +567,21 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         const nl = raw.indexOf('\n')
         raw = nl >= 0 ? raw.slice(nl + 1) : ''
       }
-      const msgs = readClaudeMessagesFromRaw(raw)
-      // Only blocks BEFORE the last line are settled-intermediate; the last
-      // line may still be the in-flight / final block → that's turn-done's.
-      for (let i = 0; i < msgs.length - 1; i++) {
-        if (!active) return
-        const m = msgs[i]!
-        if (m.role !== 'assistant' || m.isError || !m.text.trim()) continue
-        if ((Date.parse(m.timestamp) || 0) <= sinceMs) continue
+      // Candidate intermediate blocks: assistant, non-error, non-empty, past
+      // the turn boundary. HOLD BACK the most recent assistant block — it's the
+      // current/eventual final answer that turn-done sends — so streamed and
+      // final stay disjoint BY CONSTRUCTION (not just via uuid exclusion), even
+      // when tool-result lines trail the final block.
+      const candidates = readClaudeMessagesFromRaw(raw).filter(
+        (m) =>
+          m.role === 'assistant' &&
+          !m.isError &&
+          m.text.trim() !== '' &&
+          (Date.parse(m.timestamp) || 0) > sinceMs,
+      )
+      for (let i = 0; i < candidates.length - 1; i++) {
+        if (!active || !isCurrent()) return
+        const m = candidates[i]!
         if (sent.has(m.uuid)) continue
         sent.add(m.uuid)
         try {
@@ -573,19 +602,8 @@ export function startWebServer(opts: WebServerOptions): http.Server {
           /* keep polling — a transient read/post error shouldn't kill the stream */
         }
       }
-      streamers.delete(sessionId)
+      if (streamers.get(sessionId) === self) streamers.delete(sessionId) // don't evict a successor
     }
-    streamers.set(sessionId, {
-      stop: async () => {
-        active = false
-        try {
-          await inFlight
-        } catch {
-          /* ignore */
-        }
-        return sent
-      },
-    })
     void loop()
   }
 
