@@ -118,6 +118,11 @@ function truncateToCells(s: string, maxCells: number): string {
   return out
 }
 
+/** Header width budget in rendered cells (≈ half that many CJK chars). Desktop
+ * Lark cards are wide, so default generously to fill ~one line there; tune with
+ * CLAWX_CARD_TITLE_CELLS (a smaller value suits a mobile-primary viewer). */
+const TITLE_CELLS = Math.max(12, Number(process.env.CLAWX_CARD_TITLE_CELLS) || 46)
+
 export function buildBotReplyCard(args: {
   text: string
   kind?: 'normal' | 'warning' | 'error'
@@ -143,9 +148,9 @@ export function buildBotReplyCard(args: {
   if (kind === 'error') title = title.replace(/^🚨\s*/, '')
   if (kind === 'warning') title = title.replace(/^⚠️\s*/, '')
   // Keep the header to ~one line. Width-based so a Chinese title doesn't
-  // overflow. Budget leaves room for the "💭 " prefix added to intermediate
-  // cards so those also stay on one line.
-  title = truncateToCells(title, args.intermediate ? 28 : 32)
+  // overflow. Intermediate cards reserve 4 cells for the "💭 " prefix so they
+  // stay on one line too.
+  title = truncateToCells(title, args.intermediate ? TITLE_CELLS - 4 : TITLE_CELLS)
   if (!title) {
     title =
       kind === 'error' ? 'Claude 报错' : kind === 'warning' ? 'Claude 回复 (含警告)' : 'Claude 回复'
