@@ -1158,7 +1158,49 @@ export function startWebServer(opts: WebServerOptions): http.Server {
                 : working || repl === 'generating'
                   ? 'working'
                   : 'idle'
-            return { sessionId: e.sessionId, status, repl, alive, working }
+            // Last assistant line as a card preview ("what it last said"), so
+            // the board shows content not just status. Read only the tail of
+            // the transcript to bound cost on long sessions.
+            let preview = ''
+            try {
+              const kind = e.agentKind ?? 'claude'
+              const located = locateAgentTranscript(
+                kind,
+                e.agentSessionId ?? e.claudeUuid,
+                e.transcriptPath,
+              )
+              if (located?.jsonlPath && fs.existsSync(located.jsonlPath)) {
+                const size = fs.statSync(located.jsonlPath).size
+                const start = Math.max(0, size - 32_768)
+                const fd = fs.openSync(located.jsonlPath, 'r')
+                let raw = ''
+                try {
+                  const buf = Buffer.alloc(size - start)
+                  fs.readSync(fd, buf, 0, size - start, start)
+                  raw = buf.toString('utf8')
+                } finally {
+                  fs.closeSync(fd)
+                }
+                if (start > 0) {
+                  const nl = raw.indexOf('\n')
+                  raw = nl >= 0 ? raw.slice(nl + 1) : ''
+                }
+                const msgs =
+                  kind === 'codex'
+                    ? readCodexMessagesFromRaw(raw).messages
+                    : readClaudeMessagesFromRaw(raw)
+                for (let i = msgs.length - 1; i >= 0; i--) {
+                  const m = msgs[i]!
+                  if (m.role === 'assistant' && m.text.trim()) {
+                    preview = m.text.trim().replace(/\s+/g, ' ').slice(0, 140)
+                    break
+                  }
+                }
+              }
+            } catch {
+              /* no preview — leave empty */
+            }
+            return { sessionId: e.sessionId, status, repl, alive, working, preview }
           }),
         )
         sendJson(res, 200, { states })

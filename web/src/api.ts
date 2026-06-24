@@ -95,6 +95,9 @@ export interface TmuxSessionState {
   repl: string
   alive: boolean
   working: boolean
+  /** First ~140 chars of the session's most recent assistant reply, so the
+   * card can show "what it last said" — empty when unknown. */
+  preview?: string
 }
 
 export interface TmuxStatesResponse {

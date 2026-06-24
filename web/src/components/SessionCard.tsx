@@ -85,6 +85,15 @@ export function SessionCard({ entry, state, onOpen, onKill }: SessionCardProps):
           {entry.cwd}
         </div>
 
+        {state?.preview ? (
+          <p
+            className="line-clamp-2 rounded bg-muted/50 px-2 py-1 text-[11px] leading-snug text-muted-foreground"
+            title={state.preview}
+          >
+            {state.preview}
+          </p>
+        ) : null}
+
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
           <span title={new Date(lastActivity).toLocaleString()}>
             活动 {relativeTime(lastActivity)}
