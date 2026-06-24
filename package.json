@@ -39,7 +39,8 @@
     "web:install": "pnpm -C web install",
     "web:dev": "pnpm -C web dev",
     "web:build": "pnpm -C web build",
-    "prepublishOnly": "pnpm build"
+    "build:all": "pnpm build && pnpm web:install && pnpm web:build",
+    "prepublishOnly": "pnpm build:all"
   },
   "engines": {
     "node": ">=20"

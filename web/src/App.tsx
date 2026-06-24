@@ -11,6 +11,7 @@ import { ConfigDrawer } from '@/components/ConfigDrawer'
 import { MessagesDrawer } from '@/components/MessagesDrawer'
 import { SchedulesTab } from '@/components/SchedulesTab'
 import { TmuxTab } from '@/components/TmuxTab'
+import { OverviewTab } from '@/components/OverviewTab'
 import { useDashboardData } from '@/hooks/useDashboardData'
 import { useSessionMessages, type MessageFetcher } from '@/hooks/useSessionMessages'
 import { useSessionHashRoute } from '@/hooks/useSessionHashRoute'
@@ -195,13 +196,28 @@ export function App(): JSX.Element {
             up "Sessions"; "schedules" lights up Schedules. Switching the
             top-level tab lands on a sensible default sub-view. */}
         <Tabs
-          value={tabRoute.tab === 'schedules' ? 'schedules' : 'sessions'}
-          onValueChange={(v) => tabRoute.setTab(v === 'schedules' ? 'schedules' : 'sessions:tmux')}
+          value={
+            tabRoute.tab === 'overview'
+              ? 'overview'
+              : tabRoute.tab === 'schedules'
+                ? 'schedules'
+                : 'sessions'
+          }
+          onValueChange={(v) =>
+            tabRoute.setTab(
+              v === 'overview' ? 'overview' : v === 'schedules' ? 'schedules' : 'sessions:tmux',
+            )
+          }
         >
           <TabsList>
+            <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="sessions">Sessions</TabsTrigger>
             <TabsTrigger value="schedules">Schedules</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="overview">
+            <OverviewTab onOpenSession={openTmuxSession} />
+          </TabsContent>
 
           <TabsContent value="sessions">
             {/* Second-level tabs: Tmux | Claude | Codex | Room. Bound to the

@@ -54,6 +54,7 @@ import {
 import type { CronEngineHandle } from './cron-engine.js'
 import { TmuxSessionStore, type TmuxSessionEntry } from './tmux-session-store.js'
 import { createTmuxOrchestrator, type TmuxOrchestrator, type SendSource } from './tmux-orchestrator.js'
+import { classifyReplState } from './repl-watchdog.js'
 import type { LarkThreadService } from './lark-thread.js'
 import { listRooms } from './room/room-store.js'
 
@@ -1128,6 +1129,39 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         } catch (err: any) {
           sendJson(res, 500, { ok: false, error: err?.message ?? String(err) })
         }
+        return
+      }
+
+      // GET /api/tmux-sessions/states — coarse live status per session for
+      // the dashboard cards. One pane capture + classify per session; a dead
+      // session's capture rejects → marked offline. Polled slower than the
+      // list (the capture is the costly part), so keep it its own endpoint.
+      if (req.method === 'GET' && url.pathname === '/api/tmux-sessions/states') {
+        const entries = tmuxSessionStore.entries()
+        const states = await Promise.all(
+          entries.map(async (e) => {
+            const working = !!e.currentTurnUserMessageId
+            let alive = false
+            let repl = 'unknown'
+            try {
+              repl = classifyReplState(await tmuxOrchestrator.capture(e.sessionId, 80))
+              alive = true
+            } catch {
+              alive = false
+              repl = 'dead'
+            }
+            // Collapse to one badge value the card renders directly.
+            const status = !alive
+              ? 'offline'
+              : repl === 'rate-limit' || repl === 'dialog'
+                ? 'stuck'
+                : working || repl === 'generating'
+                  ? 'working'
+                  : 'idle'
+            return { sessionId: e.sessionId, status, repl, alive, working }
+          }),
+        )
+        sendJson(res, 200, { states })
         return
       }
 

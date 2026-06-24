@@ -25,24 +25,18 @@ import { useEffect, useState } from 'react'
  * fallback for arbitrary paths, so hash routing is the safest choice.
  */
 export type Tab =
+  | 'overview'
   | 'sessions:tmux'
   | 'sessions:claude'
   | 'sessions:codex'
   | 'sessions:room'
   | 'schedules'
 
-const VALID_TABS: readonly Tab[] = [
-  'sessions:tmux',
-  'sessions:claude',
-  'sessions:codex',
-  'sessions:room',
-  'schedules',
-]
-
-const DEFAULT_TAB: Tab = 'sessions:tmux'
+const DEFAULT_TAB: Tab = 'overview'
 
 /** Map a `Tab` to its canonical hash. */
 function tabToHash(tab: Tab): string {
+  if (tab === 'overview') return '#/overview'
   if (tab === 'schedules') return '#/schedules'
   // sessions:<sub> → #/sessions/<sub>
   const sub = tab.slice('sessions:'.length)
@@ -60,8 +54,9 @@ const SESSIONS_SUBTABS: Record<string, Tab> = {
   room: 'sessions:room',
 }
 
-// Legacy single-segment hashes from the old flat-tab layout.
+// Single-segment hashes: the Overview top-level tab + legacy flat-tab aliases.
 const LEGACY_TAB_ALIASES: Record<string, Tab> = {
+  overview: 'overview',
   tmux: 'sessions:tmux',
   all: 'sessions:claude',
   codex: 'sessions:codex',

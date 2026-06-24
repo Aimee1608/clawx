@@ -86,6 +86,21 @@ export interface TmuxListResponse {
   sessions: TmuxSessionEntry[]
 }
 
+/** Coarse live status for a tmux session, from /api/tmux-sessions/states.
+ * `status` is what the dashboard card badge renders; `repl` is the finer
+ * REPL classification it's derived from. */
+export interface TmuxSessionState {
+  sessionId: string
+  status: 'working' | 'idle' | 'stuck' | 'offline'
+  repl: string
+  alive: boolean
+  working: boolean
+}
+
+export interface TmuxStatesResponse {
+  states: TmuxSessionState[]
+}
+
 export interface TmuxCreateBody {
   cwd: string
   label?: string
@@ -272,6 +287,8 @@ export const api = {
   // ── Tmux sessions ──────────────────────────────────────────────
   listTmuxSessions: () =>
     fetch('/api/tmux-sessions').then((r) => j<TmuxListResponse>(r)),
+  tmuxSessionStates: () =>
+    fetch('/api/tmux-sessions/states').then((r) => j<TmuxStatesResponse>(r)),
   createTmuxSession: (body: TmuxCreateBody) =>
     fetch('/api/tmux-sessions', {
       method: 'POST',
