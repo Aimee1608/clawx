@@ -1,6 +1,6 @@
 {
   "name": "@aimee1608/clawx",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "三端互通的 Claude Code 代理：把 Claude Code CLI 跑在持久化 tmux session 里，同时从终端、内嵌 web 控制台、Feishu(Lark) 话题对话同一个 claude REPL — 输入互通、回复实时投递。带 cron、Stop hook 回写、reactions 进度指示。",
   "keywords": [
