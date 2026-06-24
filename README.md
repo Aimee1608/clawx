@@ -12,6 +12,7 @@
 - 三端互通:终端 tmux ↔ 飞书话题 ↔ web(查看历史)
 - 单 + 多 agent 统一在一个 CLI 下
 - claude + codex(异质模型)双后端
+- 回合内流式(opt-in):claude 的中间叙述块实时投递到飞书,过程块(青绿 💭 卡)与最终答复(蓝色卡)一眼区分
 - cron 定时任务(定时跑 prompt / 提醒 / 扫描)
 - 场景模板系统(项目级 `.forge/templates/` + 全局)
 - DM agent:飞书私聊里直接对话、让 bot 自己管理会话
@@ -24,12 +25,26 @@
 
 ## 安装
 
+**从 npm(推荐)**
+
+```bash
+npm i -g @aimee1608/clawx       # 全局安装,命令为 `clawx`
+# 或免安装试用:npx @aimee1608/clawx --help
+```
+
+**从源码(开发 / 二次开发)**
+
 ```bash
 git clone https://github.com/Aimee1608/clawx.git
 cd clawx
 pnpm install
 pnpm build            # tsc → dist/
 pnpm link --global    # 装全局 `clawx` 命令
+```
+
+装好后配置:
+
+```bash
 clawx init          # 交互式配置 solo 的飞书 app / chat / 工作目录
 clawx doctor        # 环境自检
 clawx room init     # room 多 bot fleet 交互配置(校验 token + 探 open_id → lark-apps.json)
@@ -108,6 +123,15 @@ clawx room attach <rid>         # 重新进入某房间的 tmux
 | `CLAWX_USER_OPEN_ID` | 你的 open_id(@ 你用;通常首条 DM 自动学到) |
 | `CLAWX_TMUX_PROGRESS_EMOJI` | 进度反应表情(默认 `THINKING`) |
 | `CLAWX_TMUX_CMD` | tmux 二进制(默认 `tmux`) |
+
+**回合内流式**(claude 中间块实时投递,默认关)
+| 变量 | 作用 | 默认 |
+|---|---|---|
+| `CLAWX_STREAM_REPLIES` | `1` = 开启回合内流式中间回复 | 关 |
+| `CLAWX_STREAM_POLL_MS` | transcript 轮询间隔 | `700` |
+| `CLAWX_STREAM_TAIL_BYTES` | 每次只读 transcript 尾部窗口(控内存) | `524288`(512KB) |
+| `CLAWX_STREAM_MAX_MS` | 单回合流式兜底上限 | `1800000`(30min) |
+| `CLAWX_CARD_TITLE_CELLS` | 飞书回复卡片标题宽度预算(中文/emoji 算 2 宽) | `46` |
 
 **其他**
 | 变量 | 作用 |
