@@ -83,6 +83,41 @@ export function buildAskQuestionCard(args: {
  *   - 'warning' → yellow header (used when the turn had recovered errors)
  *   - 'error'   → red header (used when the turn dead-ended on an error)
  */
+/** Rendered width of one char: CJK / full-width / emoji take ~2 cells, the
+ * rest 1. Lets us cap a mixed CN/EN title to ~one line without a Chinese
+ * title overflowing at the same char count a latin one fits on. */
+function charCells(ch: string): number {
+  const cp = ch.codePointAt(0) ?? 0
+  if (
+    cp >= 0x1100 &&
+    (cp <= 0x115f || // Hangul Jamo
+      (cp >= 0x2e80 && cp <= 0xa4cf) || // CJK radicals … Yi
+      (cp >= 0xac00 && cp <= 0xd7a3) || // Hangul syllables
+      (cp >= 0xf900 && cp <= 0xfaff) || // CJK compat ideographs
+      (cp >= 0xfe30 && cp <= 0xfe4f) || // CJK compat forms
+      (cp >= 0xff00 && cp <= 0xff60) || // full-width forms
+      (cp >= 0xffe0 && cp <= 0xffe6) ||
+      cp >= 0x1f000) // emoji / supplementary planes
+  ) {
+    return 2
+  }
+  return 1
+}
+
+/** Truncate to a target rendered width (not char count), appending '…' when
+ * cut. Iterates by code point so surrogate-pair emoji aren't split. */
+function truncateToCells(s: string, maxCells: number): string {
+  let cells = 0
+  let out = ''
+  for (const ch of s) {
+    const c = charCells(ch)
+    if (cells + c > maxCells) return out + '…'
+    cells += c
+    out += ch
+  }
+  return out
+}
+
 export function buildBotReplyCard(args: {
   text: string
   kind?: 'normal' | 'warning' | 'error'
@@ -107,7 +142,10 @@ export function buildBotReplyCard(args: {
     .trim()
   if (kind === 'error') title = title.replace(/^🚨\s*/, '')
   if (kind === 'warning') title = title.replace(/^⚠️\s*/, '')
-  if (title.length > 80) title = title.slice(0, 77) + '…'
+  // Keep the header to ~one line. Width-based so a Chinese title doesn't
+  // overflow. Budget leaves room for the "💭 " prefix added to intermediate
+  // cards so those also stay on one line.
+  title = truncateToCells(title, args.intermediate ? 28 : 32)
   if (!title) {
     title =
       kind === 'error' ? 'Claude 报错' : kind === 'warning' ? 'Claude 回复 (含警告)' : 'Claude 回复'
