@@ -6,6 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { SessionCard } from '@/components/SessionCard'
 import { useTmuxSessions } from '@/hooks/useTmuxSessions'
 import { useTmuxStates } from '@/hooks/useTmuxStates'
+import { TIME_FILTER_OPTIONS, type TimeFilter } from '@/components/ClaudeSessionsFilters'
 import type { TmuxSessionEntry, TmuxSessionState } from '@/api'
 
 type Status = TmuxSessionState['status']
@@ -45,28 +46,38 @@ export function OverviewTab({ onOpenSession }: OverviewTabProps): JSX.Element {
   const { sessions, loading, error, refresh, kill } = useTmuxSessions(3_000)
   const states = useTmuxStates(6_000)
   const [view, setView] = React.useState<'status' | 'project'>('status')
+  const [timeFilter, setTimeFilter] = React.useState<TimeFilter>('all')
 
   const statusOf = React.useCallback(
     (e: TmuxSessionEntry): Status => states.get(e.sessionId)?.status ?? 'idle',
     [states],
   )
 
+  // Sessions within the selected activity window (by lastTurnAt/createdAt).
+  // 'all' → no filter. Everything below renders from `visible`.
+  const visible = React.useMemo(() => {
+    const opt = TIME_FILTER_OPTIONS.find((o) => o.key === timeFilter)
+    if (!opt?.ms) return sessions
+    const cutoff = Date.now() - opt.ms
+    return sessions.filter((e) => activityMs(e) >= cutoff)
+  }, [sessions, timeFilter])
+
   const counts = React.useMemo(() => {
     const c: Record<Status, number> = { working: 0, stuck: 0, idle: 0, offline: 0 }
-    for (const e of sessions) c[statusOf(e)]++
+    for (const e of visible) c[statusOf(e)]++
     return c
-  }, [sessions, statusOf])
+  }, [visible, statusOf])
 
   const byStatus = React.useMemo(() => {
     const buckets: Record<Status, TmuxSessionEntry[]> = { working: [], stuck: [], idle: [], offline: [] }
-    for (const e of sessions) buckets[statusOf(e)].push(e)
+    for (const e of visible) buckets[statusOf(e)].push(e)
     for (const k of Object.keys(buckets) as Status[]) buckets[k].sort((a, b) => activityMs(b) - activityMs(a))
     return buckets
-  }, [sessions, statusOf])
+  }, [visible, statusOf])
 
   const byProject = React.useMemo(() => {
     const groups = new Map<string, TmuxSessionEntry[]>()
-    for (const e of sessions) {
+    for (const e of visible) {
       const key = basename(e.cwd)
       const arr = groups.get(key) ?? []
       arr.push(e)
@@ -80,7 +91,7 @@ export function OverviewTab({ onOpenSession }: OverviewTabProps): JSX.Element {
     })
     entries.sort((a, b) => a.lead - b.lead || b.list.length - a.list.length)
     return entries
-  }, [sessions, statusOf])
+  }, [visible, statusOf])
 
   function renderCard(entry: TmuxSessionEntry): JSX.Element {
     return (
@@ -100,8 +111,29 @@ export function OverviewTab({ onOpenSession }: OverviewTabProps): JSX.Element {
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <LayoutGrid className="h-4 w-4" />
           会话看板
-          <span className="text-muted-foreground">({sessions.length})</span>
+          <span className="text-muted-foreground">
+            ({visible.length}
+            {visible.length !== sessions.length ? ` / ${sessions.length}` : ''})
+          </span>
         </h2>
+
+        {/* Activity-window filter — narrows the board to sessions active within
+            the range (by last turn). 'All' shows everything. */}
+        <div className="flex items-center gap-0.5 rounded-md border p-0.5 text-xs">
+          {TIME_FILTER_OPTIONS.map((o) => (
+            <button
+              key={o.key}
+              onClick={() => setTimeFilter(o.key)}
+              className={`rounded px-2 py-1 ${
+                timeFilter === o.key
+                  ? 'bg-muted font-semibold'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
 
         {/* Summary pills — stuck pulses when any session needs attention. */}
         <div className="flex items-center gap-2 text-xs">
@@ -164,6 +196,10 @@ export function OverviewTab({ onOpenSession }: OverviewTabProps): JSX.Element {
       ) : sessions.length === 0 ? (
         <div className="rounded-lg border border-dashed py-16 text-center text-sm text-muted-foreground">
           还没有会话 —— 用 `clawx solo` 或飞书私聊起一个,它就会出现在这里。
+        </div>
+      ) : visible.length === 0 ? (
+        <div className="rounded-lg border border-dashed py-16 text-center text-sm text-muted-foreground">
+          当前时间范围内没有活跃会话 —— 试试切到更大的范围或「All」。
         </div>
       ) : view === 'status' ? (
         <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 xl:grid-cols-4">
