@@ -153,9 +153,9 @@ export function OverviewTab({ onOpenSession }: OverviewTabProps): JSX.Element {
       ) : null}
 
       {loading && sessions.length === 0 ? (
-        <div className="flex gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {COLUMNS.map((c) => (
-            <div key={c.status} className="w-72 shrink-0 space-y-3">
+            <div key={c.status} className="space-y-3">
               <Skeleton className="h-6 w-24" />
               <Skeleton className="h-40 w-full" />
             </div>
@@ -166,11 +166,11 @@ export function OverviewTab({ onOpenSession }: OverviewTabProps): JSX.Element {
           还没有会话 —— 用 `clawx solo` 或飞书私聊起一个,它就会出现在这里。
         </div>
       ) : view === 'status' ? (
-        <div className="flex gap-4 overflow-x-auto pb-3">
+        <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {COLUMNS.map((col) => {
             const items = byStatus[col.status]
             return (
-              <div key={col.status} className={`flex w-72 shrink-0 flex-col rounded-lg border ${col.ring}`}>
+              <div key={col.status} className={`flex flex-col rounded-lg border ${col.ring}`}>
                 <div className={`flex items-center gap-2 px-3 py-2 text-xs font-semibold ${col.head}`}>
                   <span className={`inline-block h-2 w-2 rounded-full ${col.dot}`} />
                   {col.label}
