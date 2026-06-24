@@ -149,7 +149,7 @@ export function SessionCard({ entry, state, onOpen, onKill }: SessionCardProps):
         ) : null}
       </CardContent>
 
-      <CardFooter className="flex flex-wrap gap-1.5 border-t pt-2.5">
+      <CardFooter className="flex items-center gap-1.5 border-t pt-2.5">
         <Button size="sm" variant="default" onClick={() => onOpen(entry)} className="h-7 gap-1 px-2 text-xs">
           <MessageSquare className="h-3.5 w-3.5" />
           打开
@@ -163,20 +163,26 @@ export function SessionCard({ entry, state, onOpen, onKill }: SessionCardProps):
           <Send className="h-3.5 w-3.5" />
           发送
         </Button>
-        <Button size="sm" variant="outline" onClick={handleCopyAttach} className="h-7 gap-1 px-2 text-xs" title={attachCmd}>
+        {/* Secondary actions are icon-only (with tooltips) so the footer
+            never wraps in a narrow column. */}
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleCopyAttach}
+          className="h-7 w-7 p-0"
+          title={`复制: ${attachCmd}`}
+        >
           <Copy className="h-3.5 w-3.5" />
-          attach
         </Button>
         {entry.chatId ? (
           <a
             href={`https://applink.feishu.cn/client/chat/open?openChatId=${entry.chatId}`}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs hover:bg-muted"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md border hover:bg-muted"
             title="打开会话所在的飞书群(applink 仅支持到群)"
           >
             <ExternalLink className="h-3.5 w-3.5" />
-            群
           </a>
         ) : null}
         <Button
@@ -184,10 +190,10 @@ export function SessionCard({ entry, state, onOpen, onKill }: SessionCardProps):
           variant="ghost"
           onClick={handleKill}
           disabled={killing}
-          className="ml-auto h-7 gap-1 px-2 text-xs text-destructive hover:bg-destructive/10"
+          className="ml-auto h-7 w-7 p-0 text-destructive hover:bg-destructive/10"
+          title="关闭会话 (kill)"
         >
           <Trash2 className="h-3.5 w-3.5" />
-          {killing ? '…' : 'kill'}
         </Button>
       </CardFooter>
     </Card>
