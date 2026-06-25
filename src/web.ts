@@ -1474,8 +1474,13 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         const claudeUuid = typeof body?.claude_uuid === 'string' ? body.claude_uuid : ''
         const prompt = typeof body?.prompt === 'string' ? body.prompt : ''
         if (!claudeUuid) { sendJson(res, 400, { ok: false, error: 'claude_uuid required' }); return }
-        const r = await handleAgentTurnStart({ agentKind: 'claude', agentSessionId: claudeUuid, prompt })
-        sendJson(res, r.status, r.body)
+        // Ack immediately: the agent's hook blocks claude until this returns,
+        // so the echo + reaction (Lark round-trips) run in the background and
+        // never sit on claude's per-turn critical path.
+        sendJson(res, 200, { ok: true, queued: true })
+        void handleAgentTurnStart({ agentKind: 'claude', agentSessionId: claudeUuid, prompt }).catch(
+          (err: any) => log.warn('turn-start bg failed', { err: err?.message ?? String(err) }),
+        )
         return
       }
 
@@ -1487,8 +1492,10 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         const prompt = typeof body?.prompt === 'string' ? body.prompt : ''
         if (!agentKind) { sendJson(res, 400, { ok: false, error: 'agentKind must be claude or codex' }); return }
         if (!agentSessionId) { sendJson(res, 400, { ok: false, error: 'agentSessionId required' }); return }
-        const r = await handleAgentTurnStart({ agentKind, agentSessionId, transcriptPath, prompt })
-        sendJson(res, r.status, r.body)
+        sendJson(res, 200, { ok: true, queued: true })
+        void handleAgentTurnStart({ agentKind, agentSessionId, transcriptPath, prompt }).catch(
+          (err: any) => log.warn('agent-turn-start bg failed', { err: err?.message ?? String(err) }),
+        )
         return
       }
 
@@ -1497,8 +1504,12 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         const claudeUuid = typeof body?.claude_uuid === 'string' ? body.claude_uuid : ''
         const transcriptPath = typeof body?.transcript_path === 'string' ? body.transcript_path : ''
         if (!claudeUuid) { sendJson(res, 400, { ok: false, error: 'claude_uuid required' }); return }
-        const r = await handleAgentTurnDone({ agentKind: 'claude', agentSessionId: claudeUuid, transcriptPath, recovered: body?.recovered === true })
-        sendJson(res, r.status, r.body)
+        // Ack immediately so claude's Stop hook doesn't block on the transcript
+        // parse + Lark fanout — those run in the background off the hot path.
+        sendJson(res, 200, { ok: true, queued: true })
+        void handleAgentTurnDone({ agentKind: 'claude', agentSessionId: claudeUuid, transcriptPath, recovered: body?.recovered === true }).catch(
+          (err: any) => log.warn('turn-done bg failed', { err: err?.message ?? String(err) }),
+        )
         return
       }
 
@@ -1509,8 +1520,10 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         const transcriptPath = typeof body?.transcriptPath === 'string' ? body.transcriptPath : undefined
         if (!agentKind) { sendJson(res, 400, { ok: false, error: 'agentKind must be claude or codex' }); return }
         if (!agentSessionId) { sendJson(res, 400, { ok: false, error: 'agentSessionId required' }); return }
-        const r = await handleAgentTurnDone({ agentKind, agentSessionId, transcriptPath, recovered: body?.recovered === true })
-        sendJson(res, r.status, r.body)
+        sendJson(res, 200, { ok: true, queued: true })
+        void handleAgentTurnDone({ agentKind, agentSessionId, transcriptPath, recovered: body?.recovered === true }).catch(
+          (err: any) => log.warn('agent-turn-done bg failed', { err: err?.message ?? String(err) }),
+        )
         return
       }
 
