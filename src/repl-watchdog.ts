@@ -66,6 +66,14 @@ export interface ReplWatchdogDeps {
    * completed but turn-done never landed. Absent → codex sessions are not
    * watched. */
   codexHasFinishedReply?: (entry: TmuxSessionEntry) => Promise<boolean>
+  /** Stall detector: ms since claude received a prompt and produced NOTHING
+   * (no tool call, no message) — i.e. the transcript's last record is an
+   * unanswered user prompt. null when not in that state. When this exceeds
+   * `stallWarnMs` the watchdog posts a one-time heads-up to the thread.
+   * Absent → no stall alerting. */
+  turnStalledMs?: (entry: TmuxSessionEntry) => Promise<number | null>
+  /** Threshold for the stall alert. Default 10 min. */
+  stallWarnMs?: number
   /** Poll interval. Default 60s. */
   intervalMs?: number
 }
@@ -84,8 +92,43 @@ export function createReplWatchdog(deps: ReplWatchdogDeps): ReplWatchdog {
   // we only recover after seeing idle TWICE in a row, ruling out a brief
   // gap between tool calls. Cleared when the session is healthy again.
   const latch = new Map<string, ReplState>()
+  const stallWarnMs = deps.stallWarnMs ?? 10 * 60_000
+  // Sessions we've already sent a stall heads-up for this stall; cleared when
+  // the session produces output again (turnStalledMs goes null/below threshold).
+  const stallWarned = new Set<string>()
 
   async function handleSession(entry: TmuxSessionEntry): Promise<void> {
+    // Stall alert (independent of the in-progress marker, which isn't set for
+    // every source): claude got a prompt and produced NOTHING — no tool call,
+    // no message — for stallWarnMs. Warn once so the operator isn't left
+    // staring at a silent thread for 10+ minutes wondering if it's wedged.
+    if (deps.turnStalledMs) {
+      let stalledMs: number | null = null
+      try {
+        stalledMs = await deps.turnStalledMs(entry)
+      } catch {
+        stalledMs = null
+      }
+      if (stalledMs === null || stalledMs < stallWarnMs) {
+        stallWarned.delete(entry.sessionId)
+      } else if (!stallWarned.has(entry.sessionId)) {
+        stallWarned.add(entry.sessionId)
+        const mins = Math.round(stalledMs / 60_000)
+        try {
+          await deps.postWarning(
+            entry,
+            `⚠️ 当前回合已 ${mins} 分钟没有任何输出(无工具调用、无回复)——claude 可能在长时间思考或卡住了。可去终端 / web 看板「打开 → Raw」看现状,或重发 / 发 esc 中断。`,
+          )
+          log.info('repl-watchdog: stall warned', { sessionId: entry.sessionId, stalledMs })
+        } catch (err: any) {
+          log.warn('repl-watchdog: stall warn failed', {
+            sessionId: entry.sessionId,
+            err: err?.message ?? String(err),
+          })
+        }
+      }
+    }
+
     // Only sessions with a turn in progress. turn-start sets
     // currentTurnUserMessageId; turn-done clears it. No marker → idle is
     // expected, nothing to watch.

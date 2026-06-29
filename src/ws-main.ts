@@ -607,6 +607,64 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
                 (Date.parse(m.timestamp) || 0) > sinceMs,
             )
           },
+          // Stall detector (claude): how long the transcript's LAST record has
+          // been an unanswered user prompt — i.e. claude got the message and
+          // produced nothing (no tool, no message). null when the last record
+          // is a tool_result / assistant block / running tool (progress is
+          // happening). Reads only the tail to bound cost.
+          turnStalledMs: async (entry) => {
+            if ((entry.agentKind ?? 'claude') !== 'claude') return null
+            const jsonlPath =
+              entry.transcriptPath ||
+              findAgentTranscriptPath('claude', entry.claudeUuid ?? entry.agentSessionId ?? '')
+            if (!jsonlPath || !fs.existsSync(jsonlPath)) return null
+            let raw = ''
+            try {
+              const size = fs.statSync(jsonlPath).size
+              const start = Math.max(0, size - 65536)
+              const fd = fs.openSync(jsonlPath, 'r')
+              try {
+                const buf = Buffer.alloc(size - start)
+                fs.readSync(fd, buf, 0, size - start, start)
+                raw = buf.toString('utf8')
+              } finally {
+                fs.closeSync(fd)
+              }
+              if (start > 0) {
+                const nl = raw.indexOf('\n')
+                raw = nl >= 0 ? raw.slice(nl + 1) : ''
+              }
+            } catch {
+              return null
+            }
+            // Find the chronologically last record with a timestamp.
+            let last: any = null
+            for (const line of raw.split('\n')) {
+              if (!line.trim()) continue
+              let r: any
+              try {
+                r = JSON.parse(line)
+              } catch {
+                continue
+              }
+              if (r?.timestamp) last = r
+            }
+            if (!last) return null
+            // Stalled only when that last record is an UNANSWERED USER PROMPT:
+            // a real prompt (string or text block), not a tool_result, and not
+            // an assistant record (which would mean claude produced something).
+            const c = last.message?.content
+            const isPrompt =
+              last.type === 'user' &&
+              last.message?.role === 'user' &&
+              (typeof c === 'string' ||
+                (Array.isArray(c) &&
+                  c.some((b: any) => b?.type === 'text') &&
+                  !c.some((b: any) => b?.type === 'tool_result')))
+            if (!isPrompt) return null
+            return Date.now() - (Date.parse(last.timestamp) || 0)
+          },
+          stallWarnMs: Number(process.env.CLAWX_STALL_WARN_MS) || 10 * 60_000,
           intervalMs: Number(process.env.CLAWX_REPL_WATCHDOG_MS) || 60_000,
         })
         watchdog.start()
