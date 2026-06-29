@@ -1398,7 +1398,19 @@ export function startWebServer(opts: WebServerOptions): http.Server {
               const last = turnAssistant[turnAssistant.length - 1]
               const lastIsError = !!last?.isError
               turnEndedInError = lastIsError
-              assistantText = last ? (lastIsError ? `🚨 ${args.agentKind} API 报错 (本轮终止):\n\n${last.text.trim()}` : last.text.trim()) : null
+              // Join ALL not-yet-streamed assistant blocks, not just the last.
+              // The streamer holds back the most-recent block; if turn-done
+              // stops it before that block streams (the second-to-last race),
+              // sending only `last` would drop it. With streaming off this also
+              // restores the intermediate narration that `last`-only dropped.
+              assistantText = !last
+                ? null
+                : lastIsError
+                  ? `🚨 ${args.agentKind} API 报错 (本轮终止):\n\n${last.text.trim()}`
+                  : turnAssistant
+                      .map((m) => m.text.trim())
+                      .filter(Boolean)
+                      .join('\n\n')
               userText = turnUser.length > 0 ? turnUser[0]! : null
               // Codex: a turn is complete only once the transcript has a
               // task_complete event (codexCompleted), not merely a reply
