@@ -90,6 +90,10 @@ export interface TmuxOrchestrator {
    * message so the user can abort a runaway turn from Lark. */
   interrupt(sessionId: string): Promise<void>
   capture(sessionId: string, lines?: number): Promise<string>
+  /** Coarse REPL state (generating / idle / dialog / rate-limit / unknown)
+   * from a pane capture. Used to tell whether a freshly-sent message was
+   * QUEUED (REPL busy generating) vs taken immediately. '' on failure. */
+  peekReplState(sessionId: string): Promise<string>
   kill(sessionId: string): Promise<void>
   get(sessionId: string): TmuxSessionEntry | undefined
   list(): TmuxSessionEntry[]
@@ -732,6 +736,16 @@ export function createTmuxOrchestrator(
       const entry = store.get(sessionId)
       if (!entry) throw new Error(`no tmux session for ${sessionId}`)
       return mgr.capturePane({ name: entry.tmuxName, lines })
+    },
+
+    async peekReplState(sessionId: string): Promise<string> {
+      const entry = store.get(sessionId)
+      if (!entry) return ''
+      try {
+        return classifyReplState(await mgr.capturePane({ name: entry.tmuxName, lines: 80 }))
+      } catch {
+        return ''
+      }
     },
 
     async kill(sessionId: string): Promise<void> {

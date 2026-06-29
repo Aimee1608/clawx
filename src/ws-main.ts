@@ -784,6 +784,25 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
               textPreview: text.slice(0, 60),
               imageCount: imagePaths.length,
             })
+            // If claude was mid-turn, the REPL QUEUES this message (processed
+            // when the current turn ends) rather than taking it now. Mark the
+            // user's message with an "OnIt" reaction so a queued send is
+            // visibly distinct from one taken immediately (which gets the
+            // THINKING progress reaction at turn-start). Lark has no hourglass
+            // emoji_type; OnIt = "got it, queued". Best-effort — never blocks.
+            try {
+              if ((await tmuxOrchestrator.peekReplState(entry.sessionId)) === 'generating') {
+                await larkThread.addReaction({
+                  messageId: message.message_id,
+                  emojiType: 'OnIt',
+                })
+              }
+            } catch (err: any) {
+              log.warn('tmux queued-marker reaction failed', {
+                sessionId: entry.sessionId,
+                err: err?.message ?? String(err),
+              })
+            }
           } catch (err: any) {
             await replyText(
               client,
