@@ -9,6 +9,7 @@ import {
   TmuxSessionStore,
   type TmuxSessionEntry,
 } from './tmux-session-store.js'
+import { classifyReplState } from './repl-watchdog.js'
 
 /**
  * Coordinates `tmux` and the session-store so the rest of the codebase
@@ -357,6 +358,7 @@ export function createTmuxOrchestrator(
     source: SendSource
     tmuxName: string
     retried: boolean
+    armedAt: number
     timer: ReturnType<typeof setTimeout>
   }
   const pendingDeliveries = new Map<string, PendingDelivery>()
@@ -379,7 +381,7 @@ export function createTmuxOrchestrator(
       () => void onDeliveryTimeout(sessionId),
       deliveryConfirmMs,
     )
-    pendingDeliveries.set(sessionId, { text, source, tmuxName, retried: false, timer })
+    pendingDeliveries.set(sessionId, { text, source, tmuxName, retried: false, armedAt: Date.now(), timer })
   }
 
   async function onDeliveryTimeout(sessionId: string): Promise<void> {
@@ -388,6 +390,22 @@ export function createTmuxOrchestrator(
     // Session vanished meanwhile — nothing to retry / warn about.
     if (!(await mgr.hasSession(p.tmuxName))) {
       clearDelivery(sessionId)
+      return
+    }
+    // If the REPL is actively generating, our text is QUEUED by Claude Code
+    // (it picks up queued input when the current turn ends) — NOT lost. So
+    // don't nudge Enter (pointless mid-turn) and don't warn; just keep waiting
+    // silently until a turn actually starts (confirmTurnStarted clears us) or
+    // the REPL goes idle. A generous deadline guards a genuinely wedged pane.
+    const STUCK_DEADLINE_MS = 20 * 60_000
+    let replState = 'unknown'
+    try {
+      replState = classifyReplState(await mgr.capturePane({ name: p.tmuxName, lines: 80 }))
+    } catch {
+      /* capture failed — fall through to the normal retry/warn path */
+    }
+    if (replState === 'generating' && Date.now() - p.armedAt < STUCK_DEADLINE_MS) {
+      p.timer = setTimeout(() => void onDeliveryTimeout(sessionId), deliveryConfirmMs)
       return
     }
     if (!p.retried) {
