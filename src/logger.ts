@@ -13,20 +13,20 @@ function fmtMeta(meta: unknown): string {
 
 export const log = {
   info(msg: string, meta?: unknown): void {
-    console.log(chalk.cyan(`[${ts()}] INFO`), msg + fmtMeta(meta))
+    console.error(chalk.cyan(`[${ts()}] INFO`), msg + fmtMeta(meta))
   },
   warn(msg: string, meta?: unknown): void {
-    console.log(chalk.yellow(`[${ts()}] WARN`), msg + fmtMeta(meta))
+    console.error(chalk.yellow(`[${ts()}] WARN`), msg + fmtMeta(meta))
   },
   error(msg: string, meta?: unknown): void {
-    console.log(chalk.red(`[${ts()}] ERR `), msg + fmtMeta(meta))
+    console.error(chalk.red(`[${ts()}] ERR `), msg + fmtMeta(meta))
   },
   debug(msg: string, meta?: unknown): void {
-    console.log(chalk.gray(`[${ts()}] DBG `), msg + fmtMeta(meta))
+    console.error(chalk.gray(`[${ts()}] DBG `), msg + fmtMeta(meta))
   },
   task(event: string, taskId: string, detail?: string): void {
     const tag = event.toUpperCase().padEnd(8)
-    console.log(
+    console.error(
       chalk.green(`[${ts()}] ${tag}`),
       chalk.bold(taskId),
       detail ? chalk.gray(detail) : '',
