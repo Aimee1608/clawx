@@ -33,6 +33,10 @@ export interface MessagesDrawerProps {
   open: boolean
   /** Subtitle below the title — caller shapes the displayed metadata. */
   subtitle?: React.ReactNode
+  /** The agent/claude session id being viewed (= the jsonl uuid). Shown as a
+   * copyable chip under the title, always — even on a deep-linked open where
+   * there's no cached subtitle. */
+  sessionId?: string | null
   messages: UiMessage[]
   loading: boolean
   error: string | null
@@ -80,6 +84,7 @@ const ACTIVE_WINDOW_MS = 30_000
 export function MessagesDrawer({
   open,
   subtitle,
+  sessionId,
   messages,
   loading,
   error,
@@ -126,6 +131,21 @@ export function MessagesDrawer({
               <SheetTitle className="text-left">Session Messages</SheetTitle>
               {subtitle ? (
                 <SheetDescription className="mt-0.5 truncate text-left">{subtitle}</SheetDescription>
+              ) : null}
+              {sessionId ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void copyToClipboard(sessionId).then((ok) =>
+                      toast[ok ? 'success' : 'error'](ok ? '已复制 session id' : '复制失败'),
+                    )
+                  }}
+                  className="group mt-1 inline-flex max-w-full items-center gap-1 rounded border border-input bg-muted/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground hover:border-primary hover:text-primary"
+                  title="点击复制 session id(jsonl uuid)"
+                >
+                  <span className="truncate">session: {sessionId}</span>
+                  <Copy className="h-3 w-3 shrink-0" />
+                </button>
               ) : null}
             </div>
             {tmuxSid ? (

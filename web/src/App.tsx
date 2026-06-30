@@ -285,6 +285,7 @@ export function App(): JSX.Element {
       <MessagesDrawer
         open={route.uuid !== null}
         subtitle={subtitle}
+        sessionId={route.uuid}
         messages={messagesState.messages}
         loading={messagesState.loading}
         error={messagesState.error}
