@@ -494,19 +494,29 @@ export function startWebServer(opts: WebServerOptions): http.Server {
     stop(): Promise<Set<string>>
   }
   const streamers = new Map<string, ReplyStreamer>()
+  // Uuids already streamed for the CURRENT turn, per session. Persists ACROSS
+  // streamer instances: a new turn-start supersedes the old streamer, but the
+  // replacement must NOT re-send blocks already streamed (would double-post to
+  // Lark, e.g. after an API-error retry or a queued follow-up prompt with no
+  // turn-done between). Cleared only at turn-done / kill.
+  const streamedBySession = new Map<string, Set<string>>()
 
   function stopReplyStreamer(sessionId: string): Promise<Set<string>> {
+    const streamed = streamedBySession.get(sessionId) ?? new Set<string>()
     const s = streamers.get(sessionId)
-    if (!s) return Promise.resolve(new Set<string>())
+    if (!s) return Promise.resolve(streamed)
     streamers.delete(sessionId)
-    return s.stop()
+    return s.stop().then(() => streamed)
   }
 
   function startReplyStreamer(entry: TmuxSessionEntry, sinceMs: number): void {
     if (!STREAM_ENABLED || (entry.agentKind ?? 'claude') !== 'claude' || !opts.tmuxStreamBlock) return
     const sessionId = entry.sessionId
     void stopReplyStreamer(sessionId) // a new turn supersedes the prior streamer
-    const sent = new Set<string>()
+    // Reuse the session's streamed-set so a superseding streamer inherits what
+    // was already sent and never re-streams it (see streamedBySession).
+    const sent = streamedBySession.get(sessionId) ?? new Set<string>()
+    streamedBySession.set(sessionId, sent)
     const deadline = Date.now() + STREAM_MAX_MS
     let active = true
     let lastSize = -1
@@ -1233,6 +1243,7 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         // Killed mid-turn: stop the streamer or its poll loop would outlive
         // the session (turn-done never fires for a killed session).
         await stopReplyStreamer(sid)
+        streamedBySession.delete(sid)
         try {
           await tmuxOrchestrator.kill(sid)
           if (doomed?.threadId && doomed.rootMessageId && opts.larkThread) {
@@ -1358,8 +1369,11 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         if (!entry) return { status: 200, body: { ok: true, matched: false } }
         // The turn is ending — stop tailing it and take the set of blocks the
         // streamer already sent, so the gather below excludes them (no block
-        // is ever delivered twice, even in odd transcript orderings).
+        // is ever delivered twice, even in odd transcript orderings). Reset the
+        // per-session streamed-set now the turn is over — the next turn starts
+        // fresh (the reference we captured stays valid for the gather below).
         const streamedUuids = await stopReplyStreamer(entry.sessionId)
+        streamedBySession.delete(entry.sessionId)
         if (args.transcriptPath && entry.transcriptPath !== args.transcriptPath) {
           entry = tmuxSessionStore.patch(entry.sessionId, { transcriptPath: args.transcriptPath })
         }
