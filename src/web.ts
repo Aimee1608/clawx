@@ -1400,12 +1400,16 @@ export function startWebServer(opts: WebServerOptions): http.Server {
               messageCount = messages.length
               const turnAssistant: UiMessage[] = []
               const turnUser: string[] = []
+              let lastRawAssistant: UiMessage | undefined
               for (const m of messages) {
                 const ts = Date.parse(m.timestamp) || 0
                 if (ts <= sinceMs) continue
                 if (m.role === 'assistant' && m.text.trim()) {
-                  // Skip blocks already streamed mid-turn so they aren't
-                  // re-sent as part of the final fanout.
+                  // lastRawAssistant tracks the newest block REGARDLESS of
+                  // streaming — used to detect the turn is truly written to
+                  // disk (turnComplete). turnAssistant is what we still need to
+                  // SEND (excludes blocks already streamed).
+                  lastRawAssistant = m
                   if (!streamedUuids.has(m.uuid)) turnAssistant.push(m)
                 } else if (m.role === 'user' && m.text.trim()) turnUser.push(m.text)
               }
@@ -1431,18 +1435,22 @@ export function startWebServer(opts: WebServerOptions): http.Server {
               // block — this waits out the ~1s gap between the final
               // message and its task_complete marker, so we don't fan out
               // (or stop retrying) before the turn truly ended.
-              const turnComplete = last !== undefined && (lastIsError ||
-                (args.agentKind === 'codex'
-                  ? (codexCompleted?.size ?? 0) > 0
-                  : last.stopReason === 'end_turn' || last.stopReason === 'stop_sequence' || last.stopReason === 'max_tokens'))
+              // Completion is decided on the RAW newest block (ignoring
+              // streaming): the turn is done once its final assistant block is
+              // on disk with a terminal stop_reason — even if that block was
+              // already streamed (so turnAssistant/`last` is empty). This both
+              // (a) stops the deduped no-op call from spinning the full ~8s,
+              // and (b) keeps waiting when the final block simply hasn't been
+              // flushed yet — the case that used to drop the last message.
+              const turnComplete =
+                lastRawAssistant !== undefined &&
+                (lastRawAssistant.isError ||
+                  (args.agentKind === 'codex'
+                    ? (codexCompleted?.size ?? 0) > 0
+                    : lastRawAssistant.stopReason === 'end_turn' ||
+                      lastRawAssistant.stopReason === 'stop_sequence' ||
+                      lastRawAssistant.stopReason === 'max_tokens'))
               if (turnComplete) break
-              // Nothing new past the boundary — no assistant reply to wait on
-              // a task_complete for, and no pending user turn to hold for.
-              // Happens when a duplicate turn-done lands after the boundary
-              // already advanced (the per-session lock serializes these, so
-              // this is the deduped no-op call). Looping can't surface
-              // anything; break now instead of polling the full ~7.5s.
-              if (last === undefined && turnUser.length === 0) break
               if (attempt === 15) break
               await new Promise((r) => setTimeout(r, 500))
             }
