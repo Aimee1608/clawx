@@ -174,6 +174,9 @@ export function buildBotReplyCard(args: {
         : 'blue'
   return {
     schema: '2.0',
+    // width_mode:'fill' → the card uses the FULL message width instead of the
+    // narrow PC default, so tables / code / long replies are easier to read.
+    config: { width_mode: 'fill' },
     header: {
       title: { tag: 'plain_text', content: title },
       template,
