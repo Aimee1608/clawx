@@ -68,6 +68,7 @@ export function buildRichCard(args: {
   )
   return {
     schema: '2.0',
+    config: { width_mode: 'fill' },
     header,
     body: { elements },
   }

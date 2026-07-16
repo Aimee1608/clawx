@@ -45,17 +45,15 @@ export function buildAskQuestionCard(args: {
   lines.push('_claude 正在用 inline 文字重新提问，你直接在话题里文字回复就好。_')
   const body = lines.join('\n').slice(0, 4000)
   return {
-    config: { wide_screen_mode: true },
+    schema: '2.0',
+    config: { width_mode: 'fill' },
     header: {
       title: { tag: 'plain_text', content: '🤔 Claude 想问你' },
       template: 'yellow',
     },
-    elements: [
-      {
-        tag: 'div',
-        text: { tag: 'lark_md', content: body },
-      },
-    ],
+    body: {
+      elements: [{ tag: 'markdown', content: body }],
+    },
   }
 }
 
@@ -209,17 +207,18 @@ export function buildForwardCard(args: {
   // doubling lone newlines.
   body = body.replace(/([^\n])\n([^\n])/g, '$1\n\n$2')
   return {
-    config: { wide_screen_mode: true },
+    schema: '2.0',
+    // v2 + width_mode:'fill' to match buildBotReplyCard so every card in the
+    // thread renders at the SAME full width (mixing v1 wide_screen_mode and v2
+    // fill looked inconsistent).
+    config: { width_mode: 'fill' },
     header: {
       title: { tag: 'plain_text', content: `🖥 转发自 ${sourceLabel(args.source)}` },
       template: 'blue',
     },
-    elements: [
-      {
-        tag: 'div',
-        text: { tag: 'lark_md', content: body },
-      },
-    ],
+    body: {
+      elements: [{ tag: 'markdown', content: body }],
+    },
   }
 }
 
