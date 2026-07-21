@@ -253,6 +253,34 @@ function postLocalAgentTurnDone(
   })
 }
 
+/** Tear a tmux session down by hitting the daemon's OWN DELETE endpoint, so
+ * the full cleanup path runs (kill tmux + drop record + stop streamer + post
+ * the 🧹 cleanup notice into the thread). Used by the in-thread `kill` control
+ * word. Resolves true on ok. */
+function deleteTmuxSessionViaSelf(port: number, sid: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const req = http.request(
+      {
+        host: '127.0.0.1',
+        port,
+        path: `/api/tmux-sessions/${encodeURIComponent(sid)}`,
+        method: 'DELETE',
+        timeout: 30_000,
+      },
+      (res) => {
+        res.resume()
+        res.on('end', () => resolve((res.statusCode ?? 500) < 300))
+      },
+    )
+    req.on('error', () => resolve(false))
+    req.on('timeout', () => {
+      req.destroy()
+      resolve(false)
+    })
+    req.end()
+  })
+}
+
 interface WsConfig {
   appId: string
   appSecret: string
@@ -493,6 +521,11 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
 
   // Embedded web UI — failures must not block the WS client.
   const webPort = resolveWebPort()
+  // Armed-kill confirmations per session (sessionId → expiry ms). The in-thread
+  // `kill` control word is irreversible (kills tmux + drops the record), so the
+  // first `kill` arms a 60s confirm window; a second `kill`/`确认` within it
+  // executes. Any other message cancels.
+  const pendingKill = new Map<string, number>()
   if (webPort !== null) {
     try {
       const srv = startWebServer({
@@ -796,6 +829,49 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
                   .catch(() => {})
               }
               return
+            }
+
+            // Control word: `kill` (also `/kill` / `关闭会话` / `清理会话`) tears
+            // the session down — same as `clawx kill <sid>`. Irreversible, so a
+            // two-step confirm: first `kill` arms a 60s window; a second `kill`
+            // or `确认`/`yes` within it executes (via the daemon's own DELETE so
+            // the full cleanup + 🧹 notice runs). Any other message cancels.
+            {
+              const t = text.trim()
+              const noAttach = imageKeys.length === 0
+              const isKillWord = noAttach && /^\/?(kill|关闭会话|清理会话)$/i.test(t)
+              const isConfirmWord = noAttach && /^(确认|yes|y)$/i.test(t)
+              const armed = (pendingKill.get(entry.sessionId) ?? 0) > Date.now()
+              if (isKillWord || (isConfirmWord && armed)) {
+                if (armed) {
+                  pendingKill.delete(entry.sessionId)
+                  const label = entry.label?.trim() || entry.sessionId
+                  const ok = webPort !== null && (await deleteTmuxSessionViaSelf(webPort, entry.sessionId))
+                  log.info('tmux thread message -> kill', {
+                    sessionId: entry.sessionId,
+                    threadId: incomingThreadId,
+                    ok,
+                  })
+                  if (!ok && entry.rootMessageId) {
+                    await larkThread
+                      .postInThread({ rootMessageId: entry.rootMessageId, text: `✗ 关闭「${label}」失败,请重试或用 clawx kill ${entry.sessionId}` })
+                      .catch(() => {})
+                  }
+                  return
+                }
+                pendingKill.set(entry.sessionId, Date.now() + 60_000)
+                if (entry.rootMessageId) {
+                  await larkThread
+                    .postInThread({
+                      rootMessageId: entry.rootMessageId,
+                      text: `⚠️ 确认关闭会话「${entry.label?.trim() || entry.sessionId}」?\n60 秒内回复 \`kill\` 或 \`确认\` 即关闭(会杀掉 tmux 并删除记录,不可恢复)。发别的消息即取消。`,
+                    })
+                    .catch(() => {})
+                }
+                return
+              }
+              // A normal message cancels any pending kill-confirm.
+              if (armed) pendingKill.delete(entry.sessionId)
             }
 
             tmuxSessionStore.patch(entry.sessionId, {
