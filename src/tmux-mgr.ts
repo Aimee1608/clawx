@@ -100,6 +100,26 @@ export function createTmuxMgr(opts: TmuxMgrOptions = {}): TmuxMgr {
     }
   }
 
+  /** Leave copy-mode/view-mode if the pane is in one, so a following
+   * send-keys types into the REPL instead of being swallowed as a
+   * copy-mode key binding. This is the fix for a silent message-loss
+   * bug: when the operator has the session attached and scrolls the
+   * history (Ctrl-b [ or the mouse wheel), the pane enters copy-mode;
+   * every send-keys the daemon issues then gets eaten as a copy-mode
+   * command and never reaches claude — a Feishu message vanishes with
+   * no trace. `-X cancel` exits the mode; it's a cheap no-op when the
+   * pane isn't in a mode. */
+  async function exitCopyMode(name: string): Promise<void> {
+    try {
+      const { stdout } = await run(['display-message', '-p', '-t', name, '#{pane_in_mode}'])
+      if (stdout.trim() === '1') {
+        await run(['send-keys', '-t', name, '-X', 'cancel'])
+      }
+    } catch {
+      /* best-effort — if we can't tell, fall through and send anyway */
+    }
+  }
+
   return {
     async hasSession(name) {
       assertSafeName(name)
@@ -145,6 +165,9 @@ export function createTmuxMgr(opts: TmuxMgrOptions = {}): TmuxMgr {
 
     async sendKeys({ name, text, pressEnter }) {
       assertSafeName(name)
+      // Bail the pane out of copy-mode first, else the text below is
+      // swallowed as copy-mode keys and the message is lost silently.
+      await exitCopyMode(name)
       // Split text and Enter into TWO send-keys invocations:
       //   1. `-l` (literal) so tmux types the text as-is without
       //      interpreting embedded newlines as Enter or backslash
@@ -171,6 +194,10 @@ export function createTmuxMgr(opts: TmuxMgrOptions = {}): TmuxMgr {
 
     async sendKey({ name, key }) {
       assertSafeName(name)
+      // Exit copy-mode first: otherwise Escape/C-c just leaves copy-mode
+      // instead of reaching the REPL, so an `esc` interrupt would no-op
+      // when the operator happens to be scrolling the pane.
+      await exitCopyMode(name)
       // No `-l`: tmux interprets `key` as a key NAME (Escape, C-c, …),
       // not literal characters.
       await run(['send-keys', '-t', name, key])
