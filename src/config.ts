@@ -44,6 +44,12 @@ export interface UserConfigFile {
    * group chat_id the bot has been added to.
    * Example: { "dev": "oc_aaa", "life": "oc_bbb" }. */
   tmuxThreadChats?: Record<string, string>
+  /** Named directory aliases for quick session creation, so you don't
+   * have to type full paths. Feishu `/new <alias> [label]` and
+   * `clawx solo <alias>` both resolve an alias here to its path.
+   * Values may begin with `~/` (expanded at read time).
+   * Example: { "riff": "/home/me/agent-monorepo", "bridge": "/home/me/migrate-tools" }. */
+  tmuxDirs?: Record<string, string>
   /** Curated list of cwds that show up FIRST in the Tmux create
    * picker. Operator edits manually OR via the picker's pin button.
    * Paths may begin with `~/` — expanded to $HOME at read time. */
@@ -153,4 +159,13 @@ export function expandHomePath(p: string): string {
   if (p === '~') return os.homedir()
   if (p.startsWith('~/')) return path.join(os.homedir(), p.slice(2))
   return p
+}
+
+/** Resolve a directory alias (as configured in `tmuxDirs`) to an
+ * absolute path. On a hit returns the alias's configured path with
+ * `~/` expanded; on a miss returns the input unchanged so raw paths
+ * still work. */
+export function resolveTmuxDir(arg: string, dirs?: Record<string, string>): string {
+  const hit = dirs?.[arg.trim()]
+  return hit ? expandHomePath(hit) : arg
 }

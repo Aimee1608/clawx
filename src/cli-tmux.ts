@@ -6,6 +6,7 @@ import path from 'node:path'
 
 import type { AgentKind } from './agent-backend.js'
 import { locateCodexSession } from './codex-sessions.js'
+import { loadUserConfigFile, resolveTmuxDir } from './config.js'
 
 export interface RunTmuxOptions {
   /** Working directory for the claude REPL. Optional when resumeUuid
@@ -269,6 +270,11 @@ export async function runTmux(opts: RunTmuxOptions = {}): Promise<void> {
  * (resume session — uuid implies cwd via the jsonl). */
 export function resolveCwdArg(arg: string | undefined): string | undefined {
   if (!arg || !arg.trim()) return undefined
+  // A `tmuxDirs` alias (e.g. `clawx solo riff`) wins over path
+  // resolution, so the same aliases work from the terminal as from
+  // Feishu `/new`. resolveTmuxDir returns the arg unchanged on a miss.
+  const resolved = resolveTmuxDir(arg.trim(), loadUserConfigFile().tmuxDirs)
+  if (resolved !== arg.trim()) return resolved
   return path.isAbsolute(arg) ? arg : path.resolve(process.cwd(), arg)
 }
 
