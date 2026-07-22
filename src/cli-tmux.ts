@@ -24,6 +24,8 @@ export interface RunTmuxOptions {
    * thread is created in. Omit to use the default group. */
   group?: string
   agent?: AgentKind
+  /** Claude adaptive-reasoning depth (`--effort`). Claude-only. */
+  effort?: string
 }
 
 /**
@@ -85,7 +87,7 @@ export async function runTmux(opts: RunTmuxOptions = {}): Promise<void> {
     process.stdout.write(`Creating tmux ${agent} session for cwd=${cwd} via daemon http://${host}:${port}…\n`)
   }
 
-  const body = JSON.stringify({ cwd, source: 'cli', resumeUuid, label, group, agent })
+  const body = JSON.stringify({ cwd, source: 'cli', resumeUuid, label, group, agent, effort: opts.effort })
   const result = await new Promise<{ ok: boolean; entry?: any; error?: string }>(
     (resolve) => {
       const req = http.request(

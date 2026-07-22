@@ -30,7 +30,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { ensureProxyEnv } from './proxy-env.js'
-import { normalizeAgentKind } from './agent-backend.js'
+import { normalizeAgentKind, isValidEffort, EFFORT_LEVELS } from './agent-backend.js'
 
 export interface CliOverrides {
   claudeCwd?: string
@@ -88,6 +88,9 @@ function printUsage(): void {
       '                                          (config tmuxThreadChats); omit for default.',
       '  clawx tmux --agent codex [cwd]      Create a tmux+Codex session. Omit',
       '                                          --agent to keep the default Claude behavior.',
+      '  clawx solo [cwd] --effort <level>   Set claude reasoning depth for this',
+      '                                          session: low|medium|high|xhigh|max|ultracode',
+      '                                          (claude only; codex ignores it).',
       '  clawx tmux ls                       List sessions (● alive / ✗ dead).',
       '  clawx tmux kill <sid>               Kill a session + drop its store record.',
       '  clawx tmux prune                    Remove all dead (zombie) session records.',
@@ -139,6 +142,7 @@ async function main(): Promise<void> {
       label: { type: 'string' }, // clawx tmux --label "标题"
       group: { type: 'string' }, // clawx tmux --group <name> → topic group
       agent: { type: 'string' }, // clawx tmux --agent <claude|codex>
+      effort: { type: 'string' }, // clawx solo --effort <low|…|ultracode> (claude only)
       help: { type: 'boolean', short: 'h' },
       version: { type: 'boolean', short: 'v' },
     },
@@ -256,7 +260,19 @@ async function main(): Promise<void> {
         process.stderr.write('Unknown --agent. Use `claude` or `codex`.\n')
         process.exit(2)
       }
-      await mod.runTmux({ cwd, resumeUuid, label, group, agent })
+      // --effort: claude adaptive-reasoning depth for this session only.
+      let effort = typeof values.effort === 'string' ? values.effort.trim() : undefined
+      if (effort) {
+        if (!isValidEffort(effort)) {
+          process.stderr.write(`✗ 未知 --effort "${effort}"。可选: ${EFFORT_LEVELS.join(' / ')}\n`)
+          process.exit(2)
+        }
+        if (agent === 'codex') {
+          process.stderr.write('⚠️  --effort 仅对 claude 生效，codex 会话忽略。\n')
+          effort = undefined
+        }
+      }
+      await mod.runTmux({ cwd, resumeUuid, label, group, agent, effort })
       return
     }
     case 'room': {

@@ -14,7 +14,7 @@ import {
   type UserConfigFile,
 } from './config.js'
 import { log } from './logger.js'
-import { normalizeAgentKind, type AgentKind } from './agent-backend.js'
+import { normalizeAgentKind, isValidEffort, EFFORT_LEVELS, type AgentKind } from './agent-backend.js'
 import {
   scanAllClaudeSessions,
   readMessagesByUuidFromProjects,
@@ -949,6 +949,7 @@ export function startWebServer(opts: WebServerOptions): http.Server {
           resumeUuid?: unknown
           group?: unknown
           agent?: unknown
+          effort?: unknown
         } | null
         const cwd = typeof body?.cwd === 'string' ? body.cwd.trim() : ''
         if (!cwd) {
@@ -968,6 +969,19 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         if (!agentKind) {
           sendJson(res, 400, { ok: false, error: 'agent must be claude or codex' })
           return
+        }
+        // Claude adaptive-reasoning depth. Reject unknown values so a typo
+        // doesn't silently launch at the model default. Claude-only.
+        let effort: string | undefined
+        if (body?.effort !== undefined && body.effort !== '') {
+          if (!isValidEffort(body.effort)) {
+            sendJson(res, 400, {
+              ok: false,
+              error: `unknown effort — 可选: ${EFFORT_LEVELS.join(' / ')}`,
+            })
+            return
+          }
+          effort = agentKind === 'claude' ? body.effort : undefined
         }
         // Where the create call came from. Used in the seed text so
         // multiple sessions in the thread group are easier to tell
@@ -1015,6 +1029,7 @@ export function startWebServer(opts: WebServerOptions): http.Server {
             label,
             resumeUuid,
             agentKind,
+            effort,
           })
           // create() may have re-bound this (resumed) session to a prior
           // session's Lark thread — when the resumed claude uuid already

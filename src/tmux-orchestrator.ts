@@ -48,6 +48,10 @@ export interface CreateOptions {
    * to recover from an accidentally killed pane while keeping the
    * prior conversation context. */
   resumeUuid?: string
+  /** Claude adaptive-reasoning effort (`claude --effort <level>`). Only
+   * applied to claude sessions; codex ignores it. Validate against
+   * EFFORT_LEVELS at the entry point before passing it here. */
+  effort?: string
   /** Agent REPL to run. Defaults to Claude for backwards compatibility. */
   agentKind?: AgentKind
 }
@@ -179,12 +183,16 @@ function buildAgentLaunch(args: {
   resumeId?: string
   claudeCmd: string
   codexCmd: string
+  /** Claude adaptive-reasoning depth (--effort). Claude-only; validated
+   * by the caller against EFFORT_LEVELS. */
+  effort?: string
 }): { agentSessionId?: string; bannerId: string; cmd: string; pendingSessionId: boolean } {
   if (args.agentKind === 'claude') {
     const id = args.resumeId?.trim() || randomUUID()
+    const effortArg = args.effort?.trim() ? ` --effort ${shQ(args.effort.trim())}` : ''
     const cliArgs = args.resumeId?.trim()
-      ? `--resume ${shQ(id)} --dangerously-skip-permissions`
-      : `--session-id ${shQ(id)} --dangerously-skip-permissions`
+      ? `--resume ${shQ(id)} --dangerously-skip-permissions${effortArg}`
+      : `--session-id ${shQ(id)} --dangerously-skip-permissions${effortArg}`
     return {
       agentSessionId: id,
       bannerId: id,
@@ -561,6 +569,7 @@ export function createTmuxOrchestrator(
         resumeId: opts.resumeUuid,
         claudeCmd,
         codexCmd,
+        effort: opts.effort,
       })
       const agentSessionId = launch.agentSessionId
       const claudeUuid = agentKind === 'claude' ? agentSessionId : undefined
