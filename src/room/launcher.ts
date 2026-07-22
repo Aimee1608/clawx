@@ -8,8 +8,9 @@ import type { RoomState } from './types.js'
 import { newRoomId, saveRoom, roomDir } from './room-store.js'
 import { loadTemplate, buildLeadPrompt } from './templates.js'
 import { loadLarkApps, isTopicChat } from './lark-multi.js'
-import { brand } from '../config.js'
+import { brand, dataDir } from '../config.js'
 import fs from 'node:fs'
+import path from 'node:path'
 
 const execFileP = promisify(execFile)
 
@@ -23,6 +24,26 @@ function sleep(ms: number): Promise<void> {
 }
 
 const PROXY = 'http://127.0.0.1:7890'
+
+/**
+ * Write (idempotently) a clawx-owned settings file carrying ONLY
+ * `teammateMode: "tmux"`, and return its path for `claude --settings`.
+ *
+ * Why: Agent Teams needs teammateMode=tmux so each teammate gets its
+ * own tmux pane — that's how bridge.ts routes messages to individual
+ * teammates by paneId. But this dependency must NOT live in the user's
+ * global ~/.claude/settings.json (other claude sessions rewrite that
+ * file and silently drop the key) nor in the project's .claude/ (would
+ * pollute the repo AND flip teammateMode for every plain claude run in
+ * that directory). `--settings` merges on top: ONLY this key is added;
+ * model / env / proxy / permissions still inherit from global. So room
+ * self-supplies its requirement without touching anything global. */
+function ensureRoomSettingsFile(): string {
+  const p = path.join(dataDir(), 'room-teammate-settings.json')
+  fs.mkdirSync(path.dirname(p), { recursive: true })
+  fs.writeFileSync(p, JSON.stringify({ teammateMode: 'tmux' }, null, 2))
+  return p
+}
 
 export interface LaunchOpts {
   /** short label (topic title / tmux display) */
@@ -48,9 +69,13 @@ export async function launchRoom(opts: LaunchOpts): Promise<RoomState> {
   // can't spiral into a non-converging multi-minute think on a heavy task
   // (e.g. reading a big intel库 before the kickoff gate). Cap, don't disable
   // — they still get a solid budget for debate.
+  // teammateMode=tmux via a clawx-owned --settings file so we don't
+  // depend on (or touch) the user's global ~/.claude/settings.json.
+  const roomSettings = ensureRoomSettingsFile()
   const launch =
     `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 MAX_THINKING_TOKENS=16000 ` +
-    `HTTP_PROXY=${PROXY} HTTPS_PROXY=${PROXY} http_proxy=${PROXY} https_proxy=${PROXY} claude`
+    `HTTP_PROXY=${PROXY} HTTPS_PROXY=${PROXY} http_proxy=${PROXY} https_proxy=${PROXY} ` +
+    `claude --settings "${roomSettings}"`
   await tmux('send-keys', '-t', tmuxSession, '-l', launch)
   await tmux('send-keys', '-t', tmuxSession, 'Enter')
 
