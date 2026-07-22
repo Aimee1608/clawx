@@ -521,11 +521,6 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
 
   // Embedded web UI — failures must not block the WS client.
   const webPort = resolveWebPort()
-  // Armed-kill confirmations per session (sessionId → expiry ms). The in-thread
-  // `kill` control word is irreversible (kills tmux + drops the record), so the
-  // first `kill` arms a 60s confirm window; a second `kill`/`确认` within it
-  // executes. Any other message cancels.
-  const pendingKill = new Map<string, number>()
   if (webPort !== null) {
     try {
       const srv = startWebServer({
@@ -831,47 +826,25 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
               return
             }
 
-            // Control word: `kill` (also `/kill` / `关闭会话` / `清理会话`) tears
-            // the session down — same as `clawx kill <sid>`. Irreversible, so a
-            // two-step confirm: first `kill` arms a 60s window; a second `kill`
-            // or `确认`/`yes` within it executes (via the daemon's own DELETE so
-            // the full cleanup + 🧹 notice runs). Any other message cancels.
-            {
-              const t = text.trim()
-              const noAttach = imageKeys.length === 0
-              const isKillWord = noAttach && /^\/?(kill|关闭会话|清理会话)$/i.test(t)
-              const isConfirmWord = noAttach && /^(确认|yes|y)$/i.test(t)
-              const armed = (pendingKill.get(entry.sessionId) ?? 0) > Date.now()
-              if (isKillWord || (isConfirmWord && armed)) {
-                if (armed) {
-                  pendingKill.delete(entry.sessionId)
-                  const label = entry.label?.trim() || entry.sessionId
-                  const ok = webPort !== null && (await deleteTmuxSessionViaSelf(webPort, entry.sessionId))
-                  log.info('tmux thread message -> kill', {
-                    sessionId: entry.sessionId,
-                    threadId: incomingThreadId,
-                    ok,
-                  })
-                  if (!ok && entry.rootMessageId) {
-                    await larkThread
-                      .postInThread({ rootMessageId: entry.rootMessageId, text: `✗ 关闭「${label}」失败,请重试或用 clawx kill ${entry.sessionId}` })
-                      .catch(() => {})
-                  }
-                  return
-                }
-                pendingKill.set(entry.sessionId, Date.now() + 60_000)
-                if (entry.rootMessageId) {
-                  await larkThread
-                    .postInThread({
-                      rootMessageId: entry.rootMessageId,
-                      text: `⚠️ 确认关闭会话「${entry.label?.trim() || entry.sessionId}」?\n60 秒内回复 \`kill\` 或 \`确认\` 即关闭(会杀掉 tmux 并删除记录,不可恢复)。发别的消息即取消。`,
-                    })
-                    .catch(() => {})
-                }
-                return
+            // Control word: a bare `/kill` tears the session down — same as
+            // `clawx kill <sid>`. The slash makes it deliberate enough to skip a
+            // confirm. Executes via the daemon's own DELETE so the full cleanup
+            // + 🧹 notice runs. Strict whole-message match + no attachments so a
+            // sentence merely containing "/kill" can't trigger it.
+            if (imageKeys.length === 0 && text.trim() === '/kill') {
+              const label = entry.label?.trim() || entry.sessionId
+              const ok = webPort !== null && (await deleteTmuxSessionViaSelf(webPort, entry.sessionId))
+              log.info('tmux thread message -> /kill', {
+                sessionId: entry.sessionId,
+                threadId: incomingThreadId,
+                ok,
+              })
+              if (!ok && entry.rootMessageId) {
+                await larkThread
+                  .postInThread({ rootMessageId: entry.rootMessageId, text: `✗ 关闭「${label}」失败,请重试或用 clawx kill ${entry.sessionId}` })
+                  .catch(() => {})
               }
-              // A normal message cancels any pending kill-confirm.
-              if (armed) pendingKill.delete(entry.sessionId)
+              return
             }
 
             tmuxSessionStore.patch(entry.sessionId, {
