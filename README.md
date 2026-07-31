@@ -52,6 +52,8 @@ clawx room init     # room 多 bot fleet 交互配置(校验 token + 探 open_id
 
 ## 用法
 
+> 飞书控制词 / CLI 命令 / tmux 快捷键 / web 看板的完整速查 → **[docs/cheatsheet.md](./docs/cheatsheet.md)**
+
 ### 单 agent
 
 ```bash
