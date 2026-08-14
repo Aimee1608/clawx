@@ -115,11 +115,11 @@ const PING_THROTTLE_MS = 60_000
 
 // clawx-style seed: first line becomes the topic title in a topic group.
 function seedText(room: RoomState, memberNames?: string[], userOpenId?: string): string {
-  const created = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(0, 16)
+  const created = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(5, 16)
   const lines = [
     `🆕 ${room.label}`,
     `🆔 rid: ${room.id}`,
-    `🕒 ${created} CST · 来自 终端 (clawx room) · 模板: ${room.template ?? 'design'}`,
+    `🕒 ${created} · 来自 终端 (clawx room) · 模板: ${room.template ?? 'design'}`,
     `📁 ${room.cwd}`,
     `💻 围观: tmux attach -t ${room.tmuxSession}`,
   ]

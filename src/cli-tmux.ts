@@ -237,7 +237,7 @@ export async function runTmux(opts: RunTmuxOptions = {}): Promise<void> {
   )
   process.stdout.write(`  sid: ${entry.sessionId}\n`)
   process.stdout.write(`  cwd: ${entry.cwd}\n`)
-  process.stdout.write(`  created: ${createdShown} CST\n`)
+  process.stdout.write(`  created: ${createdShown}\n`)
   if (stillAlive) {
     process.stdout.write(`  Re-attach:  tmux attach -t ${entry.tmuxName}\n`)
   }
@@ -274,7 +274,7 @@ export function resolveCwdArg(arg: string | undefined): string | undefined {
   if (!arg || !arg.trim()) return undefined
   // A `tmuxDirs` alias (e.g. `clawx solo riff`) wins over path
   // resolution, so the same aliases work from the terminal as from
-  // Feishu `/new`. resolveTmuxDir returns the arg unchanged on a miss.
+  // Feishu `/new-solo`. resolveTmuxDir returns the arg unchanged on a miss.
   const resolved = resolveTmuxDir(arg.trim(), loadUserConfigFile().tmuxDirs)
   if (resolved !== arg.trim()) return resolved
   return path.isAbsolute(arg) ? arg : path.resolve(process.cwd(), arg)

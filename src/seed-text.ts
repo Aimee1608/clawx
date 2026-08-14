@@ -270,15 +270,19 @@ export interface FormatSeedTextArgs {
  * Goal: when there are many sessions in the group, the user can scan
  * the topic list and tell sessions apart at a glance. The first line
  * is the "title" — user-supplied `label` takes precedence, otherwise
- * basename(cwd). Second line is the creation timestamp in
- * Asia/Shanghai (operator-friendly). Third + fourth lines carry the
- * cwd full path and the sid / full claude uuid for grep / debug.
+ * basename(cwd). Then: creation timestamp (MM-DD HH:mm, Asia/Shanghai),
+ * the project dir name on its own line (a labelled session hides the
+ * cwd, so this is what says which project it is), the tmux attach
+ * line, then the cwd full path and the sid / full claude uuid for
+ * grep / debug.
  */
 export function formatSeedText(args: FormatSeedTextArgs): string {
   const basename = path.basename(args.cwd) || args.cwd
   const title = args.label?.trim() || basename
   const icon = args.resumed ? '♻️' : '🆕'
   const resumeTag = args.resumed ? '续接' : ''
+  // 年份对扫读话题列表没有信息量,去掉只留 MM-DD HH:mm。sv-SE 的
+  // 顺序是 YYYY-MM-DD,直接切掉前缀比按 parts 拼更稳。
   const createdAtCN = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'Asia/Shanghai',
     year: 'numeric',
@@ -289,9 +293,9 @@ export function formatSeedText(args: FormatSeedTextArgs): string {
   })
     .format(new Date())
     .replace(',', '')
+    .replace(/^\d{4}-/, '')
   const agentKind = args.agentKind ?? 'claude'
   const fullUuid = args.agentSessionId ?? args.claudeUuid ?? '(pending)'
-  const tagBits = [sourceLabel(args.creator), resumeTag].filter(Boolean)
   const tmuxName = args.tmuxName ?? `clawx-${args.sessionId}`
   // @-mention the operator so Lark auto-subscribes them to this new
   // topic. Without this, default Lark behavior is "topic created but
@@ -306,9 +310,10 @@ export function formatSeedText(args: FormatSeedTextArgs): string {
     [
       `${icon} ${title}`,
       '',
-      `🕒 ${createdAtCN} CST · 来自 ${tagBits.join(' · ')}`,
-      `📁 ${args.cwd}`,
+      `🕒 ${createdAtCN}${resumeTag ? ` · ${resumeTag}` : ''}`,
+      `📦 ${basename}`,
       `💻 终端打开: tmux attach -t ${tmuxName}`,
+      `📁 ${args.cwd}`,
       `🆔 sid: ${args.sessionId}`,
       `🤖 agent: ${agentKind}`,
       `${agentKind}: ${fullUuid}`,

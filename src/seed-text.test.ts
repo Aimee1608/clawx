@@ -34,6 +34,17 @@ describe('formatSeedText', () => {
     expect(formatSeedText({ ...base, tmuxName: 'clawx-custom' })).toContain('tmux attach -t clawx-custom')
   })
 
+  it('shows the project dir name on its own line (which project is this?)', () => {
+    const s = formatSeedText({ ...base, label: '我的会话' })
+    expect(s).toContain('📦 proj')
+    expect(s).not.toContain('来自')
+  })
+
+  it('keeps the resume tag on the time line', () => {
+    expect(formatSeedText({ ...base, resumed: true })).toMatch(/🕒 .* · 续接/)
+    expect(formatSeedText(base)).not.toContain('续接')
+  })
+
   it('includes cwd / sid / agent metadata lines', () => {
     const s = formatSeedText({ ...base, agentKind: 'codex', agentSessionId: 'uuid-x' })
     expect(s).toContain('📁 /home/u/proj')
