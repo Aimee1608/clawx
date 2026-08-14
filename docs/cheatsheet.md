@@ -13,14 +13,15 @@
 | `esc` | 中断当前回合(等价终端按 Esc),打断跑飞了的一轮 |
 | `/kill` | 关闭该会话(= `clawx kill <sid>`:杀 tmux + 删记录 + 话题发 🧹) |
 | `/model <名>` | 切换 claude 模型(如 `/model opus`)。撞用量上限卡死时用它从飞书切模型恢复,自动先退出限额对话框。上下文保留;切完重发上一条即可继续。claude-only |
+| `/new-solo <别名> [label]` | 在话题里直接建**新会话**(和私聊里同名命令一致,不影响当前会话)。`/new` 是等价别名。必须拦截:claude 把 `new` 注册成了 `/clear` 的别名,不拦会清空本会话上下文 |
 | 其它文字 / 图片 | 作为 prompt 发给这个会话的 claude / codex |
 
 ## 二、飞书「私聊 bot」建 / 管理会话
 
 | 发送 | 作用 |
 |---|---|
-| `/new <别名> [label]` | 用目录别名建会话,如 `/new riff 修登录bug` |
-| `/new` | 列出所有目录别名 + 对应路径 |
+| `/new-solo <别名> [label]` | 用目录别名建会话,如 `/new-solo riff 修登录bug`。`/new` 是等价别名 |
+| `/new-solo` | 列出所有目录别名 + 对应路径 |
 | `/new-tmux <完整路径> [label]` | 用完整路径建会话 |
 | 自然语言(如「起个 xxx 会话 / 清理某会话」) | 交给 DM agent 处理 |
 
@@ -91,6 +92,6 @@ clawx room ls | kill <rid> | revive | templates | prune
 
 | 操作 | 飞书 | 终端 |
 |---|---|---|
-| 建会话 | `/new <别名>` | `clawx solo <别名>` |
+| 建会话 | `/new-solo <别名>` | `clawx solo <别名>` |
 | 关会话 | 话题里发 `/kill` | `clawx kill <sid>` |
 | 中断当前回合 | 话题里发 `esc` | pane 里按 `Esc` |

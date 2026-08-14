@@ -13,6 +13,7 @@ import { log } from './logger.js'
 import { startWebServer } from './web.js'
 import type { CliOverrides } from './cli.js'
 import { loadUserConfigFile, resolveTmuxDir, setUserOpenId } from './config.js'
+import { parseNewSoloCommand } from './lark-commands.js'
 import { TmuxSessionStore } from './tmux-session-store.js'
 import { createTmuxOrchestrator } from './tmux-orchestrator.js'
 import { createLarkThreadService } from './lark-thread.js'
@@ -297,7 +298,7 @@ interface WsConfig {
   tmuxThreadChatId?: string
   /** Named extra topic groups for `clawx tmux --group <name>`. */
   tmuxThreadChats?: Record<string, string>
-  /** Directory aliases for `/new <别名>` quick session creation. */
+  /** Directory aliases for `/new-solo <别名>` quick session creation. */
   tmuxDirs?: Record<string, string>
   /** Emoji_type for the PreToolUse-driven ⏳ progress reaction. Optional
    * — when unset the daemon falls back to "HOURGLASS". */
@@ -888,6 +889,34 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
               return
             }
 
+            // Control word: `/new-solo [别名] [label]` (aliases: `/new`,
+            // `/new-tmux <路径>`) builds a NEW session from inside a thread.
+            // Must be intercepted: claude registers `new` as an alias of
+            // `/clear`, so send-keys'ing it would wipe this session's context.
+            const newInThread =
+              imageKeys.length === 0
+                ? parseNewSoloCommand(text, { inThread: true })
+                : null
+            if (newInThread) {
+              const reply = await handleNewAliasCommand({
+                rest: newInThread.rest,
+                dirs: cfg.tmuxDirs ?? {},
+                defaultCwd: cfg.claudeCwd,
+                chatId: cfg.tmuxThreadChatId,
+                orchestrator: tmuxOrchestrator,
+                store: tmuxSessionStore,
+                larkThread,
+                mentionOpenId: cfg.userOpenId || openId,
+              })
+              log.info('tmux thread message -> /new-solo', {
+                sessionId: entry.sessionId,
+                threadId: incomingThreadId,
+                arg: newInThread.rest,
+              })
+              await replyText(client, message.message_id, reply)
+              return { code: 0 }
+            }
+
             tmuxSessionStore.patch(entry.sessionId, {
               currentTurnUserMessageId: message.message_id,
               currentTurnReactionId: undefined,
@@ -992,51 +1021,20 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
         return { code: 0 }
       }
 
-      // ── tmux mode: /new <别名> [label] — 目录别名快捷建会话 ───
+      // ── tmux mode: /new-solo <别名> [label] — 目录别名快捷建会话 ───
       // A short front-end for /new-tmux driven by `tmuxDirs` aliases so
-      // you never type a full path. `/new` (no arg) lists the aliases;
-      // `/new riff 修登录bug` builds in the riff dir with that label
-      // (label falls back to the alias name). An unknown token that
-      // isn't a path is rejected with the alias list, so a typo can't
-      // silently spawn a session in some stray directory. Must sit
-      // AFTER the /new-tmux branch — `/new-tmux ...` is caught there.
-      const newMatch = text.trim().match(/^\/new(?:\s+(.+))?$/i)
+      // you never type a full path. No arg → lists the aliases;
+      // `/new-solo riff 修登录bug` builds in the riff dir with that label
+      // (label falls back to the alias name). `/new` is kept as an alias.
+      // An unknown token that isn't a path is rejected with the alias
+      // list, so a typo can't silently spawn a session in some stray
+      // directory. Must sit AFTER the /new-tmux branch — that prefix is
+      // caught there.
+      const newMatch = parseNewSoloCommand(text, { inThread: false })
       if (newMatch) {
-        const dirs = cfg.tmuxDirs ?? {}
-        const names = Object.keys(dirs)
-        const rest = newMatch[1]?.trim() ?? ''
-        if (!rest) {
-          const body = names.length
-            ? names.map((n) => `• \`${n}\` → ${dirs[n]}`).join('\n')
-            : '(还没配目录别名。在 `~/.config/clawx/config.json` 的 `tmuxDirs` 里加 `"别名": "/绝对路径"`。)'
-          await replyText(
-            client,
-            message.message_id,
-            `**可用目录别名** (\`/new <别名> [label]\`):\n${body}`,
-          )
-          return { code: 0 }
-        }
-        const firstWs = rest.search(/\s/)
-        const aliasArg = firstWs === -1 ? rest : rest.slice(0, firstWs)
-        const labelArg = firstWs === -1 ? '' : rest.slice(firstWs + 1).trim()
-        const isAlias = Object.prototype.hasOwnProperty.call(dirs, aliasArg)
-        // Reject an unknown token unless it self-declares as a path
-        // (leading / or ~) — otherwise a typo'd alias would build in a
-        // relative/garbage cwd.
-        if (!isAlias && !aliasArg.startsWith('/') && !aliasArg.startsWith('~')) {
-          const hint = names.length ? names.map((n) => `\`${n}\``).join(' / ') : '(未配置)'
-          await replyText(
-            client,
-            message.message_id,
-            `✗ 未知别名 \`${aliasArg}\`。可用: ${hint}\n或用 \`/new-tmux <完整路径>\`。`,
-          )
-          return { code: 0 }
-        }
-        const reply = await handleNewTmuxCommand({
-          arg: resolveTmuxDir(aliasArg, dirs),
-          // Explicit label wins; else use the alias name so the thread
-          // title is recognizable even without a typed label.
-          label: labelArg || (isAlias ? aliasArg : undefined),
+        const reply = await handleNewAliasCommand({
+          rest: newMatch.rest,
+          dirs: cfg.tmuxDirs ?? {},
           defaultCwd: cfg.claudeCwd,
           chatId: cfg.tmuxThreadChatId,
           orchestrator: tmuxOrchestrator,
@@ -1124,7 +1122,7 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
       await replyText(
         client,
         message.message_id,
-        '💡 这里只接受 `/new <别名> [label]`(或 `/new-tmux <项目路径>`)命令;`/new` 不带参可列出别名。需要自然语言操作（创建/查询/清理 session）请 DM 我。',
+        '💡 这里只接受 `/new-solo <别名> [label]`(或 `/new-tmux <项目路径>`)命令;不带参可列出别名。需要自然语言操作（创建/查询/清理 session）请 DM 我。',
       )
       return { code: 0 }
     },
@@ -1265,4 +1263,52 @@ async function handleNewTmuxCommand(opts: {
     `**话题已建好**, 直接在话题里发消息即可继续对话。`,
     `${entry.agentKind === 'codex' ? 'Codex' : 'Claude'} 答完一轮会自动回到话题里。`,
   ].join('\n')
+}
+
+/**
+ * Handle `/new-solo [别名] [label]` — the alias front-end for /new-tmux.
+ * Returns the user-facing reply. Shared by the DM branch and the
+ * in-thread control word so both build sessions the same way.
+ */
+async function handleNewAliasCommand(opts: {
+  /** Everything after the command word, already trimmed. Empty → list aliases. */
+  rest: string
+  dirs: Record<string, string>
+  defaultCwd: string
+  chatId: string | undefined
+  orchestrator: import('./tmux-orchestrator.js').TmuxOrchestrator
+  store: import('./tmux-session-store.js').TmuxSessionStore
+  larkThread: import('./lark-thread.js').LarkThreadService
+  mentionOpenId?: string
+}): Promise<string> {
+  const names = Object.keys(opts.dirs)
+  if (!opts.rest) {
+    const body = names.length
+      ? names.map((n) => `• \`${n}\` → ${opts.dirs[n]}`).join('\n')
+      : '(还没配目录别名。在 `~/.config/clawx/config.json` 的 `tmuxDirs` 里加 `"别名": "/绝对路径"`。)'
+    return `**可用目录别名** (\`/new-solo <别名> [label]\`):\n${body}`
+  }
+  const firstWs = opts.rest.search(/\s/)
+  const aliasArg = firstWs === -1 ? opts.rest : opts.rest.slice(0, firstWs)
+  const labelArg = firstWs === -1 ? '' : opts.rest.slice(firstWs + 1).trim()
+  const isAlias = Object.prototype.hasOwnProperty.call(opts.dirs, aliasArg)
+  // Reject an unknown token unless it self-declares as a path
+  // (leading / or ~) — otherwise a typo'd alias would build in a
+  // relative/garbage cwd.
+  if (!isAlias && !aliasArg.startsWith('/') && !aliasArg.startsWith('~')) {
+    const hint = names.length ? names.map((n) => `\`${n}\``).join(' / ') : '(未配置)'
+    return `✗ 未知别名 \`${aliasArg}\`。可用: ${hint}\n或用 \`/new-tmux <完整路径>\`。`
+  }
+  return handleNewTmuxCommand({
+    arg: resolveTmuxDir(aliasArg, opts.dirs),
+    // Explicit label wins; else use the alias name so the thread
+    // title is recognizable even without a typed label.
+    label: labelArg || (isAlias ? aliasArg : undefined),
+    defaultCwd: opts.defaultCwd,
+    chatId: opts.chatId,
+    orchestrator: opts.orchestrator,
+    store: opts.store,
+    larkThread: opts.larkThread,
+    mentionOpenId: opts.mentionOpenId,
+  })
 }

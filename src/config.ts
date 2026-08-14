@@ -45,7 +45,7 @@ export interface UserConfigFile {
    * Example: { "dev": "oc_aaa", "life": "oc_bbb" }. */
   tmuxThreadChats?: Record<string, string>
   /** Named directory aliases for quick session creation, so you don't
-   * have to type full paths. Feishu `/new <alias> [label]` and
+   * have to type full paths. Feishu `/new-solo <alias> [label]` and
    * `clawx solo <alias>` both resolve an alias here to its path.
    * Values may begin with `~/` (expanded at read time).
    * Example: { "riff": "/home/me/agent-monorepo", "bridge": "/home/me/migrate-tools" }. */
