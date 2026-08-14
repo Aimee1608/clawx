@@ -191,8 +191,8 @@ export function createReplWatchdog(deps: ReplWatchdogDeps): ReplWatchdog {
       latch.set(entry.sessionId, state)
       const msg =
         state === 'rate-limit'
-          ? '⚠️ Claude 撞到用量上限，卡在 /rate-limit-options 对话框，消息发不进去——请去终端选择「等待重置 / 升级」。'
-          : '⚠️ Claude 正等你在对话框里做选择（权限 / 确认 / 提问），消息发不进去——请去终端处理。'
+          ? '⚠️ Claude 撞到用量上限，当前会话卡在限额对话框。\n👉 直接在本话题发 `/model opus`（或 `sonnet` 等）即可切模型继续——会自动退出对话框、切模型，切完重发上一条即可。也可发 `esc` 退出、等额度重置。'
+          : '⚠️ Claude 正等你在对话框里做选择（权限 / 确认 / 提问），消息发不进去——去终端处理，或发 `esc` 取消该对话框。'
       try {
         await deps.postWarning(entry, msg)
         log.info('repl-watchdog: warned stuck dialog', { sessionId: entry.sessionId, state })
