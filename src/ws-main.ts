@@ -853,6 +853,41 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
               return
             }
 
+            // Control word: `/model <名>` switches the claude REPL's model
+            // in place — mainly to recover a session wedged on the usage-cap
+            // dialog (fable 撞限后卡死) by切到 opus/sonnet, all from Lark
+            // without attaching the terminal. switchModel Escapes out of the
+            // rate-limit dialog first when needed. claude-only.
+            const modelMatch = imageKeys.length === 0 ? text.trim().match(/^\/model\s+(\S+)$/i) : null
+            if (modelMatch) {
+              const model = modelMatch[1]!
+              let ok = true
+              let errMsg = ''
+              try {
+                await tmuxOrchestrator.switchModel(entry.sessionId, model)
+              } catch (err: any) {
+                ok = false
+                errMsg = err?.message ?? String(err)
+              }
+              log.info('tmux thread message -> /model', {
+                sessionId: entry.sessionId,
+                threadId: incomingThreadId,
+                model,
+                ok,
+              })
+              if (entry.rootMessageId) {
+                await larkThread
+                  .postInThread({
+                    rootMessageId: entry.rootMessageId,
+                    text: ok
+                      ? `🔀 已切换模型到 \`${model}\`。若上一轮被用量上限打断,重发一次即可继续(上下文保留)。`
+                      : `✗ 切换模型失败: ${errMsg}`,
+                  })
+                  .catch(() => {})
+              }
+              return
+            }
+
             tmuxSessionStore.patch(entry.sessionId, {
               currentTurnUserMessageId: message.message_id,
               currentTurnReactionId: undefined,

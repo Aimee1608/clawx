@@ -93,6 +93,11 @@ export interface TmuxOrchestrator {
    * generation / cancels a pending prompt. Routed from a bare "esc"
    * message so the user can abort a runaway turn from Lark. */
   interrupt(sessionId: string): Promise<void>
+  /** Switch the claude REPL's model in place via `/model <name>`. If the
+   * pane is stuck on a rate-limit / dialog box (e.g. usage cap hit), sends
+   * Escape first to get back to an input prompt. Lets the operator recover
+   * a wedged session from Lark instead of having to attach the terminal. */
+  switchModel(sessionId: string, model: string): Promise<void>
   capture(sessionId: string, lines?: number): Promise<string>
   /** Coarse REPL state (generating / idle / dialog / rate-limit / unknown)
    * from a pane capture. Used to tell whether a freshly-sent message was
@@ -705,6 +710,30 @@ export function createTmuxOrchestrator(
         // in-flight delivery watchdog is moot now, so drop it.
         clearDelivery(sessionId)
         await mgr.sendKey({ name: entry.tmuxName, key: entry.agentKind === 'codex' ? 'C-c' : 'Escape' })
+      })
+    },
+
+    async switchModel(sessionId: string, model: string): Promise<void> {
+      await withSendLock(sessionId, async () => {
+        const entry = store.get(sessionId)
+        if (!entry) throw new Error(`no tmux session for ${sessionId}`)
+        if (entry.agentKind === 'codex') {
+          throw new Error('codex 会话暂不支持 /model 切换')
+        }
+        if (!(await mgr.hasSession(entry.tmuxName))) {
+          throw new Error(`tmux session ${entry.tmuxName} is gone — recreate with create()`)
+        }
+        clearDelivery(sessionId)
+        // Stuck on the usage-cap / permission dialog → Escape back to an
+        // input prompt first, else `/model` gets eaten by the dialog.
+        const state = classifyReplState(await mgr.capturePane({ name: entry.tmuxName, lines: 80 }))
+        if (state === 'rate-limit' || state === 'dialog') {
+          await mgr.sendKey({ name: entry.tmuxName, key: 'Escape' })
+          await new Promise((r) => setTimeout(r, 600))
+        }
+        // Don't arm the delivery watchdog: `/model` is a REPL command, not
+        // a prompt, so it produces no turn-start and would false-warn.
+        await mgr.sendKeys({ name: entry.tmuxName, text: `/model ${model}`, pressEnter: true })
       })
     },
 
