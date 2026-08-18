@@ -418,23 +418,28 @@ export async function runTmuxAdmin(
   process.stdout.write(`\n✓ pruned ${ok}/${dead.length}\n`)
 }
 
-/** alive = tmux session exists AND its pane is running claude;
- *  stale = tmux session exists but claude has exited (pane fell back to a
+/** alive = tmux session exists AND its pane is running the agent;
+ *  stale = tmux session exists but the agent has exited (pane fell back to a
  *          shell, or the pane is dead); gone = no tmux session at all
  *          (just a leftover store record). */
-function sessionState(tmuxCmd: string, name: string, agentKind: AgentKind): 'alive' | 'stale' | 'gone' {
+export function sessionState(tmuxCmd: string, name: string, agentKind: AgentKind): 'alive' | 'stale' | 'gone' {
   const has = spawnSync(tmuxCmd, ['has-session', '-t', name], { stdio: 'ignore' })
   if (has.status !== 0) return 'gone'
   const r = spawnSync(
     tmuxCmd,
-    ['list-panes', '-t', name, '-F', '#{pane_current_command} #{pane_dead}'],
+    ['list-panes', '-t', name, '-F', '#{pane_current_command} #{pane_pid} #{pane_dead}'],
     { encoding: 'utf8' },
   )
   const line = (r.stdout || '').trim().split('\n')[0] ?? ''
-  const [cmd, dead] = line.split(' ')
+  const [cmd, pid, dead] = line.split(' ')
   if (dead === '1') return 'stale'
   const expected = agentKind === 'codex' ? /codex/i : /claude/i
-  return cmd && expected.test(cmd) ? 'alive' : 'stale'
+  if (cmd && expected.test(cmd)) return 'alive'
+  // codex 是 node 起的,pane_current_command 只剩解释器名 "node",据此判 stale
+  // 会让 prune 静默杀掉活着的 codex 会话。查完整命令行才认得出来。
+  if (!pid) return 'stale'
+  const ps = spawnSync('ps', ['-o', 'args=', '-p', pid], { encoding: 'utf8' })
+  return expected.test(ps.stdout ?? '') ? 'alive' : 'stale'
 }
 
 function daemonJson(
