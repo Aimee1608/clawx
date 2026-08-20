@@ -249,6 +249,22 @@ function buildAgentLaunch(args: {
  * the worst outcome is the bot times out and we log + skip — the user
  * just has to attach and accept once manually.
  */
+/** 二进制正被自更新替换时,agent 会在 tmux 起好后 ~0.5s 内退出。等一小会儿
+ *  确认它真活着,否则调用方会拿到一个"创建成功"的空壳(话题照建、seed 照发,
+ *  直到用户发消息才撞上 session is gone)。 */
+const SETTLE_MS = 2000
+const SETTLE_POLL_MS = 250
+const RESPAWN_DELAY_MS = 2500
+
+async function waitSessionSettled(mgr: TmuxMgr, tmuxName: string): Promise<boolean> {
+  const deadline = Date.now() + SETTLE_MS
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, SETTLE_POLL_MS))
+    if (!(await mgr.hasSession(tmuxName))) return false
+  }
+  return true
+}
+
 async function acceptStartupDialogs(
   mgr: TmuxMgr,
   tmuxName: string,
@@ -586,12 +602,31 @@ export function createTmuxOrchestrator(
         `printf '${banner}' ` +
         `${shQ(opts.sessionId)} ${shQ(agentKind)} ${shQ(launch.bannerId)} ${shQ(opts.cwd)}; ` +
         launch.cmd
-      await mgr.newSession({
-        name: tmuxName,
-        cwd: opts.cwd,
-        cmd,
-        env: collectClaudeRuntimeEnv(),
-      })
+      const spawn = async () => {
+        await mgr.newSession({
+          name: tmuxName,
+          cwd: opts.cwd,
+          cmd,
+          env: collectClaudeRuntimeEnv(),
+        })
+        return waitSessionSettled(mgr, tmuxName)
+      }
+      if (!(await spawn())) {
+        log.warn('tmux session died right after launch — retrying once', {
+          sessionId: opts.sessionId,
+          tmuxName,
+          agentKind,
+        })
+        await mgr.killSession(tmuxName).catch(() => {})
+        await new Promise((r) => setTimeout(r, RESPAWN_DELAY_MS))
+        if (!(await spawn())) {
+          await mgr.killSession(tmuxName).catch(() => {})
+          throw new Error(
+            `${agentKind} 启动即退出。多半是 claude/codex 正在自动更新(二进制被替换),` +
+              `等一两分钟重试;若持续失败,手动跑一次 ${agentKind} 看报错。`,
+          )
+        }
+      }
 
       const entry: TmuxSessionEntry = {
         sessionId: opts.sessionId,
