@@ -1307,11 +1307,21 @@ export function startWebServer(opts: WebServerOptions): http.Server {
               })
             }
           }
-          if (!entry) return { status: 200, body: { ok: true, matched: false } }
+          if (!entry) {
+            log.debug('turn-start unmatched — delivery watchdog left armed', {
+              agentKind: args.agentKind,
+              agentSessionId: args.agentSessionId,
+            })
+            return { status: 200, body: { ok: true, matched: false } }
+          }
         } else if (args.transcriptPath && entry.transcriptPath !== args.transcriptPath) {
           entry = tmuxSessionStore.patch(entry.sessionId, { transcriptPath: args.transcriptPath })
         }
         if (!trimmed || trimmed.startsWith('<task-notification>') || /<task-id>/i.test(trimmed)) {
+          log.debug('turn-start skipped as synthetic', {
+            sessionId: entry.sessionId,
+            promptPreview: trimmed.slice(0, 40),
+          })
           return { status: 200, body: { ok: true, skipped: 'synthetic' } }
         }
         tmuxOrchestrator.confirmTurnStarted(entry.sessionId)
@@ -1382,6 +1392,10 @@ export function startWebServer(opts: WebServerOptions): http.Server {
           }
         }
         if (!entry) return { status: 200, body: { ok: true, matched: false } }
+        // A finished turn proves the send landed — clear the delivery watchdog
+        // even if turn-start never reached us, else it warns "可能未送达" about
+        // a message the agent already answered.
+        tmuxOrchestrator.confirmDelivered(entry.sessionId)
         // The turn is ending — stop tailing it and take the set of blocks the
         // streamer already sent, so the gather below excludes them (no block
         // is ever delivered twice, even in odd transcript orderings). Reset the

@@ -93,3 +93,70 @@ describe('create() 存活校验', () => {
     expect(store.get('sid-1')).toBeUndefined()
   })
 })
+
+describe('投递确认 watchdog', () => {
+  function makeSendOrch(opts: { onSendKeys?: (orch: any) => void } = {}) {
+    const store = new TmuxSessionStore({ persistPath: tmpFile })
+    const warned: Array<{ sessionId: string; text: string }> = []
+    let orch: any
+    const mgr = {
+      async newSession() {},
+      async hasSession() {
+        return true
+      },
+      async killSession() {},
+      async sendKeys() {
+        opts.onSendKeys?.(orch)
+      },
+      async sendKey() {},
+      async capturePane() {
+        return '❯ \n  ⏵⏵ bypass permissions on'
+      },
+      async listSessions() {
+        return []
+      },
+      async setSessionOption() {},
+      async renameWindow() {},
+    }
+    orch = createTmuxOrchestrator({
+      store,
+      mgr: mgr as any,
+      deliveryConfirmMs: 1000,
+      onDeliveryUnconfirmed: (info) => warned.push({ sessionId: info.sessionId, text: info.text }),
+    })
+    store.upsert({
+      sessionId: 'sid-1',
+      tmuxName: 'clawx-sid-1',
+      cwd: '/tmp',
+      agentKind: 'claude',
+      createdAt: new Date().toISOString(),
+    } as any)
+    return { orch, warned }
+  }
+
+  it('turn-done 兜底:turn-start 丢了也不该警告已被回复的消息', async () => {
+    const { orch, warned } = makeSendOrch()
+    await orch.send('sid-1', 'hi', 'lark')
+    // turn-start 从未到达(hook 丢了),但这一轮正常跑完
+    orch.confirmDelivered('sid-1')
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(warned).toEqual([])
+  })
+
+  it('turn-start 在 sendKeys 期间到达也能取消(arm 早于 send 的竞态)', async () => {
+    const { orch, warned } = makeSendOrch({
+      onSendKeys: (o) => o.confirmTurnStarted('sid-1'),
+    })
+    await orch.send('sid-1', 'hi', 'lark')
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(warned).toEqual([])
+  })
+
+  it('真的没人认领时仍然警告', async () => {
+    const { orch, warned } = makeSendOrch()
+    await orch.send('sid-1', 'hi', 'lark')
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(warned).toHaveLength(1)
+    expect(warned[0]!.text).toBe('hi')
+  })
+})

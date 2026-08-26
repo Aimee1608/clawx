@@ -127,6 +127,11 @@ export interface TmuxOrchestrator {
    * session actually landed, cancelling the delivery watchdog so it
    * won't retry / warn. No-op when nothing is pending. */
   confirmTurnStarted(sessionId: string): void
+  /** Called on turn-done. A finished turn proves the send landed, so this
+   * backstops a turn-start that never arrived (hook missed, entry unmatched,
+   * prompt filtered as synthetic) — without it the watchdog would warn
+   * "可能未送达" about a message the agent already answered. */
+  confirmDelivered(sessionId: string): void
 }
 
 /**
@@ -720,15 +725,24 @@ export function createTmuxOrchestrator(
         // Record BEFORE send so turn-done can identify even if the
         // jsonl writes happen faster than expected.
         recordSend(sessionId, text, source)
-        await mgr.sendKeys({ name: entry.tmuxName, text, pressEnter: true })
-        // Watchdog: a turn-start (confirmTurnStarted) cancels it; if none
-        // arrives the REPL likely swallowed the input → nudge Enter, then
-        // warn via onDeliveryUnconfirmed.
+        // Arm BEFORE sendKeys: the agent can fire its turn-start hook while
+        // sendKeys is still returning, and a confirm that lands before the
+        // watchdog exists would clear nothing — leaving it to warn forever.
         armDelivery(sessionId, entry.tmuxName, text, source)
+        try {
+          await mgr.sendKeys({ name: entry.tmuxName, text, pressEnter: true })
+        } catch (err) {
+          clearDelivery(sessionId)
+          throw err
+        }
       })
     },
 
     confirmTurnStarted(sessionId: string): void {
+      clearDelivery(sessionId)
+    },
+
+    confirmDelivered(sessionId: string): void {
       clearDelivery(sessionId)
     },
 
