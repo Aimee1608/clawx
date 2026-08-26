@@ -50,10 +50,9 @@ export interface TmuxMgr {
    * literally. Caller is responsible for serializing sends per-session
    * (tmux itself doesn't lock).
    */
-  /** `clearFirst` 先按 Ctrl-U 清掉输入行:上一条没提交成功的残留会和这次
-   * 的文本拼在一起发出去(踩过:纯图片消息卡在补全菜单里,污染了下一条)。
-   * 只用于发真实文本;delivery watchdog 补 Enter 时绝不能清——它要提交的
-   * 正是那份残留。排队中的消息不在输入行里,不受影响。 */
+  /** `clearFirst` 先按 Ctrl-U 清输入行。**当前无调用方**:上线后撞限额的
+   * 会话出现过一次消息被吞(文本和 Enter 都没进 REPL),无法复现也无法排除
+   * 是它引起的,已停用。要重新启用必须先复现那个场景并验证。 */
   sendKeys(opts: { name: string; text: string; pressEnter?: boolean; clearFirst?: boolean }): Promise<void>
   /** Send a single NAMED tmux key (e.g. 'Escape', 'C-c') to the active
    * pane — interpreted as a key name, NOT literal text. For control keys

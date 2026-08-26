@@ -161,7 +161,7 @@ describe('投递确认 watchdog', () => {
   })
 })
 
-describe('发送前清输入行', () => {
+describe('发送不带 Ctrl-U(clearFirst 已停用)', () => {
   function makeMgr() {
     const calls: Array<{ text: string; clearFirst?: boolean; pressEnter?: boolean }> = []
     const mgr = {
@@ -195,17 +195,20 @@ describe('发送前清输入行', () => {
     return { orch, calls }
   }
 
-  it('send 真实文本时先清掉上一条的残留', async () => {
+  // clearFirst 已停用(见 tmux-mgr.ts 注释):撞限额的会话上出现过一次
+  // 消息被吞,无法复现也无法排除是它引起的。这两条锁定"当前不发 C-u"。
+  it('send 真实文本时不发 C-u', async () => {
     const { orch, calls } = makeMgr()
     await orch.send('sid-1', 'hello', 'lark')
-    expect(calls[0]).toMatchObject({ text: 'hello', clearFirst: true, pressEnter: true })
+    expect(calls[0]).toMatchObject({ text: 'hello', pressEnter: true })
+    expect(calls[0]!.clearFirst).toBeFalsy()
   })
 
-  it('/model 同样先清,避免残留把命令搅坏', async () => {
+  it('/model 同样不发 C-u', async () => {
     const { orch, calls } = makeMgr()
     await orch.switchModel('sid-1', 'opus')
     const modelCall = calls.find((c) => c.text.startsWith('/model'))
-    expect(modelCall).toMatchObject({ clearFirst: true })
+    expect(modelCall!.clearFirst).toBeFalsy()
   })
 
   it('watchdog 补 Enter 时绝不清 — 它要提交的正是那份残留', async () => {
