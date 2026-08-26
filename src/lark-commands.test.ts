@@ -43,3 +43,29 @@ describe('parseNewSoloCommand', () => {
     expect(parseNewSoloCommand('/clear', { inThread: true })).toBeNull()
   })
 })
+
+const { buildImagePrompt } = await import('./ws-main.js')
+
+describe('buildImagePrompt', () => {
+  it('纯图片时末尾留空格,否则 @ 补全菜单吞掉 Enter', () => {
+    const out = buildImagePrompt(['/imgs/a.jpg'], '')
+    expect(out).toBe('@/imgs/a.jpg ')
+    expect(out.endsWith(' ')).toBe(true)
+  })
+
+  it('多图无正文时同样留尾空格', () => {
+    expect(buildImagePrompt(['/imgs/a.jpg', '/imgs/b.jpg'], '')).toBe('@/imgs/a.jpg @/imgs/b.jpg ')
+  })
+
+  it('带正文时正文在后,不需要补空格', () => {
+    expect(buildImagePrompt(['/imgs/a.jpg'], '看看这个')).toBe('@/imgs/a.jpg 看看这个')
+  })
+
+  it('只有空白正文按无正文处理', () => {
+    expect(buildImagePrompt(['/imgs/a.jpg'], '   ')).toBe('@/imgs/a.jpg ')
+  })
+
+  it('无图片时原样返回,不加尾空格', () => {
+    expect(buildImagePrompt([], '纯文本')).toBe('纯文本')
+  })
+})

@@ -414,6 +414,16 @@ function extractText(msg: {
   return out
 }
 
+/**
+ * 拼 `@路径` 形式的图片引用给 agent REPL。末尾必须留一个空格:claude 的
+ * @ 文件补全菜单在路径末尾会保持打开并吞掉 Enter——消息提交不了、`@路径`
+ * 残留在输入框,还会串到下一条消息里。有正文时正文在后,天然带不到这个坑。
+ */
+export function buildImagePrompt(imagePaths: string[], text: string): string {
+  const body = [...imagePaths.map((p) => `@${p}`), text].filter((s) => s.trim()).join(' ')
+  return imagePaths.length > 0 && !text.trim() ? `${body} ` : body
+}
+
 function stripMentions(text: string, mentions?: Array<{ key?: string; name?: string }>): string {
   if (!mentions?.length) return text.trim()
   let out = text
@@ -947,12 +957,7 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
                 })
               }
             }
-            const sendText = [
-              ...imagePaths.map((p) => `@${p}`),
-              text,
-            ]
-              .filter((s) => s.trim())
-              .join(' ')
+            const sendText = buildImagePrompt(imagePaths, text)
 
             await tmuxOrchestrator.send(entry.sessionId, sendText, 'lark')
             log.info('tmux thread message → send-keys', {
