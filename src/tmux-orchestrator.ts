@@ -730,7 +730,7 @@ export function createTmuxOrchestrator(
         // watchdog exists would clear nothing — leaving it to warn forever.
         armDelivery(sessionId, entry.tmuxName, text, source)
         try {
-          await mgr.sendKeys({ name: entry.tmuxName, text, pressEnter: true })
+          await mgr.sendKeys({ name: entry.tmuxName, text, pressEnter: true, clearFirst: true })
         } catch (err) {
           clearDelivery(sessionId)
           throw err
@@ -782,7 +782,7 @@ export function createTmuxOrchestrator(
         }
         // Don't arm the delivery watchdog: `/model` is a REPL command, not
         // a prompt, so it produces no turn-start and would false-warn.
-        await mgr.sendKeys({ name: entry.tmuxName, text: `/model ${model}`, pressEnter: true })
+        await mgr.sendKeys({ name: entry.tmuxName, text: `/model ${model}`, pressEnter: true, clearFirst: true })
       })
     },
 

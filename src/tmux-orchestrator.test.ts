@@ -160,3 +160,60 @@ describe('投递确认 watchdog', () => {
     expect(warned[0]!.text).toBe('hi')
   })
 })
+
+describe('发送前清输入行', () => {
+  function makeMgr() {
+    const calls: Array<{ text: string; clearFirst?: boolean; pressEnter?: boolean }> = []
+    const mgr = {
+      async newSession() {},
+      async hasSession() {
+        return true
+      },
+      async killSession() {},
+      async sendKeys(o: any) {
+        calls.push({ text: o.text, clearFirst: o.clearFirst, pressEnter: o.pressEnter })
+      },
+      async sendKey() {},
+      async capturePane() {
+        return '❯ '
+      },
+      async listSessions() {
+        return []
+      },
+      async setSessionOption() {},
+      async renameWindow() {},
+    }
+    const store = new TmuxSessionStore({ persistPath: tmpFile })
+    store.upsert({
+      sessionId: 'sid-1',
+      tmuxName: 'clawx-sid-1',
+      cwd: '/tmp',
+      agentKind: 'claude',
+      createdAt: new Date().toISOString(),
+    } as any)
+    const orch = createTmuxOrchestrator({ store, mgr: mgr as any, deliveryConfirmMs: 1000 })
+    return { orch, calls }
+  }
+
+  it('send 真实文本时先清掉上一条的残留', async () => {
+    const { orch, calls } = makeMgr()
+    await orch.send('sid-1', 'hello', 'lark')
+    expect(calls[0]).toMatchObject({ text: 'hello', clearFirst: true, pressEnter: true })
+  })
+
+  it('/model 同样先清,避免残留把命令搅坏', async () => {
+    const { orch, calls } = makeMgr()
+    await orch.switchModel('sid-1', 'opus')
+    const modelCall = calls.find((c) => c.text.startsWith('/model'))
+    expect(modelCall).toMatchObject({ clearFirst: true })
+  })
+
+  it('watchdog 补 Enter 时绝不清 — 它要提交的正是那份残留', async () => {
+    const { orch, calls } = makeMgr()
+    await orch.send('sid-1', 'hello', 'lark')
+    await vi.advanceTimersByTimeAsync(1_500)
+    const nudge = calls.find((c) => c.text === '' && c.pressEnter)
+    expect(nudge).toBeTruthy()
+    expect(nudge!.clearFirst).toBeFalsy()
+  })
+})

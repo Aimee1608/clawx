@@ -50,7 +50,11 @@ export interface TmuxMgr {
    * literally. Caller is responsible for serializing sends per-session
    * (tmux itself doesn't lock).
    */
-  sendKeys(opts: { name: string; text: string; pressEnter?: boolean }): Promise<void>
+  /** `clearFirst` 先按 Ctrl-U 清掉输入行:上一条没提交成功的残留会和这次
+   * 的文本拼在一起发出去(踩过:纯图片消息卡在补全菜单里,污染了下一条)。
+   * 只用于发真实文本;delivery watchdog 补 Enter 时绝不能清——它要提交的
+   * 正是那份残留。排队中的消息不在输入行里,不受影响。 */
+  sendKeys(opts: { name: string; text: string; pressEnter?: boolean; clearFirst?: boolean }): Promise<void>
   /** Send a single NAMED tmux key (e.g. 'Escape', 'C-c') to the active
    * pane — interpreted as a key name, NOT literal text. For control keys
    * like Escape (interrupt the REPL). Caller passes a fixed key name,
@@ -163,11 +167,14 @@ export function createTmuxMgr(opts: TmuxMgrOptions = {}): TmuxMgr {
       ])
     },
 
-    async sendKeys({ name, text, pressEnter }) {
+    async sendKeys({ name, text, pressEnter, clearFirst }) {
       assertSafeName(name)
       // Bail the pane out of copy-mode first, else the text below is
       // swallowed as copy-mode keys and the message is lost silently.
       await exitCopyMode(name)
+      if (clearFirst) {
+        await run(['send-keys', '-t', name, 'C-u'])
+      }
       // Split text and Enter into TWO send-keys invocations:
       //   1. `-l` (literal) so tmux types the text as-is without
       //      interpreting embedded newlines as Enter or backslash
