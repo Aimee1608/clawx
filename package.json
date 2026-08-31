@@ -18,7 +18,7 @@
     "url": "https://github.com/Aimee1608/clawx.git"
   },
   "bin": {
-    "clawx": "./dist/cli.js"
+    "xclaw": "./dist/cli.js"
   },
   "files": [
     "dist",

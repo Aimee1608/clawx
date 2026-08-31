@@ -15,7 +15,7 @@ clawx 把 Claude Code 跑成**持久会话**,从终端 tmux、飞书(Lark)话题
 ## 配置 SOP(按顺序执行)
 
 ### 第 0 步:认清你能做 / 不能做
-- ✅ 你能自动做:检查/装依赖、`pnpm build`、写 config 文件、装 hook、跑 `clawx doctor`、起 daemon、验证连通。
+- ✅ 你能自动做:检查/装依赖、`pnpm build`、写 config 文件、装 hook、跑 `xclaw doctor`、起 daemon、验证连通。
 - ❌ 你**不能**做:**在飞书后台创建 app、申请权限** —— 飞书平台不开放用 API 建应用(防滥用)。这步只能用户手动去 [open.feishu.cn](https://open.feishu.cn/app) 点。你的职责是告诉他**建几个、开哪些权限**,然后**等他把 App ID / Secret / 群 chat_id 给你**,再继续。
 
 ### 第 1 步:环境前置(你执行)
@@ -32,13 +32,13 @@ claude --version     # 需要 Claude Code CLI;没有 → https://claude.com/clau
 pnpm install
 pnpm build           # tsc → dist/
 ```
-让 `clawx` 成为全局命令,**二选一**:
-- **(推荐)本地 wrapper** `~/.local/bin/clawx`(保证 PATH 里能直接 `clawx`,且方便挂机器特定环境变量):
+让 `xclaw` 成为全局命令,**二选一**:
+- **(推荐)本地 wrapper** `~/.local/bin/xclaw`(保证 PATH 里能直接 `xclaw`,且方便挂机器特定环境变量):
   ```sh
   #!/bin/sh
-  exec node "$HOME/<clawx 仓库路径>/dist/cli.js" "$@"
+  exec node "$HOME/<xclaw 仓库路径>/dist/cli.js" "$@"
   ```
-  `chmod +x ~/.local/bin/clawx`,确保 `~/.local/bin` 在 PATH。
+  `chmod +x ~/.local/bin/xclaw`,确保 `~/.local/bin` 在 PATH。
 - 或 `pnpm link --global`。
 
 > ⚠️ **代理坑(中国大陆 / 公司内网常见)**:clawx 默认只在 proxy 变量为空时填默认值、**不会动用户已有的 proxy**。如果用户启动的 shell 注入了一个**到不了 `api.anthropic.com` 的代理**(clawx 继承后 claude 就连不上),在**本地 wrapper 或 shell rc** 里设 `CLAWX_OVERRIDE_PROXY_PATTERN=<匹配那个代理 host 或端口的正则>`,clawx 启动时会把匹配到的继承代理强制替换成可用目标(默认 `http://127.0.0.1:7890`,可用 `CLAWX_PROXY_URL` 改)。**这是机器特定配置,放本地、绝不提交进仓库。**
@@ -51,7 +51,7 @@ pnpm build           # tsc → dist/
   - 话题群的 **chat_id(`oc_...`)**
 
 ### 第 4 步:写配置(你执行)
-拿到凭据后,**直接写 config 文件**(比交互式 `clawx init` 更可控、可复核):
+拿到凭据后,**直接写 config 文件**(比交互式 `xclaw init` 更可控、可复核):
 
 **solo / daemon → `~/.config/clawx/config.json`**
 ```json
@@ -67,15 +67,15 @@ pnpm build           # tsc → dist/
 - `userOpenId` — 你的 open_id(@ 你用;通常首条私聊会自动学到、回写,可不填)。
 - `tmuxProgressEmoji` — 进度反应表情。
 
-**room → `~/.config/clawx/lark-apps.json`** — schema 见 [docs/lark-bot-setup.md](./docs/lark-bot-setup.md) 第 6 步;或让用户跑交互式 `clawx room init`(会逐个校验 token、探 bot open_id 并写文件)。
+**room → `~/.config/clawx/lark-apps.json`** — schema 见 [docs/lark-bot-setup.md](./docs/lark-bot-setup.md) 第 6 步;或让用户跑交互式 `xclaw room init`(会逐个校验 token、探 bot open_id 并写文件)。
 
 > 文件权限设 `0600`(含 secret)。**不要把这些 config 提交进任何仓库。**
 
 ### 第 5 步:装 hook(你执行)
 claude 每次回复后,靠这个 hook 把结果回写给 daemon、fanout 到飞书:
 ```bash
-clawx install-tmux-hook       # 注册 Stop / UserPromptSubmit hook 到 ~/.claude/settings.json
-clawx install-codex-hook      # 仅当用户要用 codex 后端
+xclaw install-tmux-hook       # 注册 Stop / UserPromptSubmit hook 到 ~/.claude/settings.json
+xclaw install-codex-hook      # 仅当用户要用 codex 后端
 ```
 > ⚠️ **`install-tmux-hook` 的 hook 管理有两个坑,装完务必核对 `~/.claude/settings.json`:**
 > 1. **不覆盖旧 hook**:如果已有别的 tmux-hook(旧版本 / 同机另一个类似工具),它出于幂等**不替换** —— 跑了也没用,claude 还在调旧的。
@@ -85,12 +85,12 @@ clawx install-codex-hook      # 仅当用户要用 codex 后端
 
 ### 第 6 步:验证 + 起会话(你执行)
 ```bash
-clawx doctor          # 自检:claude CLI / 代理 / config 文件
+xclaw doctor          # 自检:claude CLI / 代理 / config 文件
 ```
 > `doctor` 里 `OAUTH_TOKEN` 那个 `!` 只影响**已废弃的 web chat**,对 solo/room/飞书用法无影响,可忽略。
 
-- **solo**:`clawx daemon start` → `clawx daemon logs` 里出现 `ws connect success` = 飞书长连接通了 → `clawx solo [cwd]` 起会话。
-- **room**:`clawx room . --template dev --brief "你的议题"`(`clawx room templates` 看可用模板)。
+- **solo**:`xclaw daemon start` → `xclaw daemon logs` 里出现 `ws connect success` = 飞书长连接通了 → `xclaw solo [cwd]` 起会话。
+- **room**:`xclaw room . --template dev --brief "你的议题"`(`xclaw room templates` 看可用模板)。
 - **最终验证**:在飞书对应群里 @ bot 说句话 —— **收到回复 = 全链路打通**。
 
 ## 常见坑(配置时最容易卡的)

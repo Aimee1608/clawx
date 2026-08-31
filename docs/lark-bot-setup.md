@@ -49,7 +49,7 @@ clawx 通过飞书自建应用收发消息。**solo / daemon 需要 1 个 app**;
 
 ### solo / daemon → `~/.config/clawx/config.json`
 
-跑 `clawx init` 交互生成(会问 App ID / Secret / 群 chat_id / 工作目录),或手写:
+跑 `xclaw init` 交互生成(会问 App ID / Secret / 群 chat_id / 工作目录),或手写:
 
 ```json
 {
@@ -62,7 +62,7 @@ clawx 通过飞书自建应用收发消息。**solo / daemon 需要 1 个 app**;
 
 ### room → `~/.config/clawx/lark-apps.json`
 
-**推荐 `clawx room init` 交互生成**(问 chat_id + 3 个 app secret → 逐个校验 token、探 open_id、写文件);或手写:
+**推荐 `xclaw room init` 交互生成**(问 chat_id + 3 个 app secret → 逐个校验 token、探 open_id、写文件);或手写:
 
 ```json
 {
@@ -90,7 +90,7 @@ clawx 通过飞书自建应用收发消息。**solo / daemon 需要 1 个 app**;
 ## 7. 自检
 
 ```bash
-clawx doctor        # 检查 claude 二进制、代理、token 是否能换
+xclaw doctor        # 检查 claude 二进制、代理、token 是否能换
 ```
 
 ---

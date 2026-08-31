@@ -2,6 +2,8 @@
 
 三端(飞书话题 / 终端 CLI / web 看板)共用同一个会话。下面按「你在哪」分组。
 
+> **命令名是 `xclaw`**(项目名仍是 clawx;命令改名是为了避开同名开源项目导致的 HIDS 告警)。
+
 > 约定:`<sid>` = 会话 id(形如 `cli-tmux-1a2b3c4d`);`<别名>` = 你在 config 里配的目录别名。
 
 ## 一、飞书「话题内」控制词
@@ -11,7 +13,7 @@
 | 发送 | 作用 |
 |---|---|
 | `esc` | 中断当前回合(等价终端按 Esc),打断跑飞了的一轮 |
-| `/kill` | 关闭该会话(= `clawx kill <sid>`:杀 tmux + 删记录 + 话题发 🧹) |
+| `/kill` | 关闭该会话(= `xclaw kill <sid>`:杀 tmux + 删记录 + 话题发 🧹) |
 | `/model <名>` | 切换 claude 模型(如 `/model opus`)。撞用量上限卡死时用它从飞书切模型恢复,自动先退出限额对话框。上下文保留;切完重发上一条即可继续。claude-only |
 | `/new-solo <别名> [label]` | 在话题里直接建**新会话**(和私聊里同名命令一致,不影响当前会话)。`/new` 是等价别名。必须拦截:claude 把 `new` 注册成了 `/clear` 的别名,不拦会清空本会话上下文 |
 | 其它文字 / 图片 | 作为 prompt 发给这个会话的 claude / codex |
@@ -34,12 +36,12 @@
 }
 ```
 
-## 三、终端 CLI(`clawx …`)
+## 三、终端 CLI(`xclaw …`)
 
 ### 建会话
 
 ```
-clawx solo <别名|cwd>          起会话并 attach(Ctrl-b d 退出)
+xclaw solo <别名|cwd>          起会话并 attach(Ctrl-b d 退出)
   --label "标题"               话题标题
   --group <名>                 话题落到命名群(config.tmuxThreadChats)
   --agent codex                用 codex 而非默认 claude
@@ -53,26 +55,26 @@ clawx solo <别名|cwd>          起会话并 attach(Ctrl-b d 退出)
 ### 管理
 
 ```
-clawx kill <sid|rid>           关会话或 room(统一入口)
-clawx tmux ls                  列出所有 tmux 会话
-clawx tmux kill <sid>          杀单个
-clawx tmux prune               清理已失效的记录
+xclaw kill <sid|rid>           关会话或 room(统一入口)
+xclaw tmux ls                  列出所有 tmux 会话
+xclaw tmux kill <sid>          杀单个
+xclaw tmux prune               清理已失效的记录
 ```
 
 ### daemon / 诊断
 
 ```
-clawx daemon start|stop|status|logs   常驻进程(飞书长连接靠它)
-clawx doctor                          自检:claude CLI / 代理 / config
-clawx install-tmux-hook               装回写 hook(claude 答完回写飞书)
-clawx install-codex-hook              codex 后端的 hook
+xclaw daemon start|stop|status|logs   常驻进程(飞书长连接靠它)
+xclaw doctor                          自检:claude CLI / 代理 / config
+xclaw install-tmux-hook               装回写 hook(claude 答完回写飞书)
+xclaw install-codex-hook              codex 后端的 hook
 ```
 
 ### room(多 agent 协作,基于 Agent Teams)
 
 ```
-clawx room . --template <名> --brief "议题"
-clawx room ls | kill <rid> | revive | templates | prune
+xclaw room . --template <名> --brief "议题"
+xclaw room ls | kill <rid> | revive | templates | prune
 ```
 
 ## 四、tmux 快捷键(终端 attach 后)
@@ -92,6 +94,6 @@ clawx room ls | kill <rid> | revive | templates | prune
 
 | 操作 | 飞书 | 终端 |
 |---|---|---|
-| 建会话 | `/new-solo <别名>` | `clawx solo <别名>` |
-| 关会话 | 话题里发 `/kill` | `clawx kill <sid>` |
+| 建会话 | `/new-solo <别名>` | `xclaw solo <别名>` |
+| 关会话 | 话题里发 `/kill` | `xclaw kill <sid>` |
 | 中断当前回合 | 话题里发 `esc` | pane 里按 `Esc` |

@@ -4,8 +4,8 @@
 
 ## 是什么
 
-- **`clawx solo`** — 单 agent:把一个 claude(或 codex)会话跑在持久化 tmux 里,从终端、飞书话题、web 三端共用同一个 REPL。带 Stop-hook 回写、reactions 进度提示、cron 定时。
-- **`clawx room`** — 多 agent:基于 Claude Code 原生 Agent Teams 的协作房间,多个 agent(各有独立飞书 bot 身份)在飞书话题里对话、辩论,你随时插话。按**场景模板**(开发 / code review / 异常定位 / 头脑风暴 …)定制角色与流程。
+- **`xclaw solo`** — 单 agent:把一个 claude(或 codex)会话跑在持久化 tmux 里,从终端、飞书话题、web 三端共用同一个 REPL。带 Stop-hook 回写、reactions 进度提示、cron 定时。
+- **`xclaw room`** — 多 agent:基于 Claude Code 原生 Agent Teams 的协作房间,多个 agent(各有独立飞书 bot 身份)在飞书话题里对话、辩论,你随时插话。按**场景模板**(开发 / code review / 异常定位 / 头脑风暴 …)定制角色与流程。
 
 ## 特性
 
@@ -28,7 +28,7 @@
 **从 npm(推荐)**
 
 ```bash
-npm i -g @aimee1608/clawx       # 全局安装,命令为 `clawx`
+npm i -g @aimee1608/clawx       # 全局安装,命令为 `xclaw`
 # 或免安装试用:npx @aimee1608/clawx --help
 ```
 
@@ -36,18 +36,18 @@ npm i -g @aimee1608/clawx       # 全局安装,命令为 `clawx`
 
 ```bash
 git clone https://github.com/Aimee1608/clawx.git
-cd clawx
+cd xclaw
 pnpm install
 pnpm build            # tsc → dist/
-pnpm link --global    # 装全局 `clawx` 命令
+pnpm link --global    # 装全局 `xclaw` 命令
 ```
 
 装好后配置:
 
 ```bash
-clawx init          # 交互式配置 solo 的飞书 app / chat / 工作目录
-clawx doctor        # 环境自检
-clawx room init     # room 多 bot fleet 交互配置(校验 token + 探 open_id → lark-apps.json)
+xclaw init          # 交互式配置 solo 的飞书 app / chat / 工作目录
+xclaw doctor        # 环境自检
+xclaw room init     # room 多 bot fleet 交互配置(校验 token + 探 open_id → lark-apps.json)
 ```
 
 ## 用法
@@ -57,22 +57,22 @@ clawx room init     # room 多 bot fleet 交互配置(校验 token + 探 open_id
 ### 单 agent
 
 ```bash
-clawx solo [cwd]                # 新建会话并接管当前终端(tmux)
-clawx solo --resume <uuid>      # 续接已有 claude 会话
-clawx solo --agent codex [cwd]  # 用 codex 作后端
-clawx solo ls | kill <id> | prune
-clawx daemon start | stop | status | logs   # 后台常驻(飞书长连接)
-clawx web                       # 打开 web(查看会话与历史)
+xclaw solo [cwd]                # 新建会话并接管当前终端(tmux)
+xclaw solo --resume <uuid>      # 续接已有 claude 会话
+xclaw solo --agent codex [cwd]  # 用 codex 作后端
+xclaw solo ls | kill <id> | prune
+xclaw daemon start | stop | status | logs   # 后台常驻(飞书长连接)
+xclaw web                       # 打开 web(查看会话与历史)
 ```
 
 ### 多 agent
 
 ```bash
-clawx room . --template dev --brief "给 X 模块加缓存"   # 开发房
-clawx room . --template code-review --brief-file pr.md  # 代码审查房
-clawx room templates            # 列出可用模板
-clawx room ls | revive | kill <rid> | prune
-clawx room attach <rid>         # 重新进入某房间的 tmux
+xclaw room . --template dev --brief "给 X 模块加缓存"   # 开发房
+xclaw room . --template code-review --brief-file pr.md  # 代码审查房
+xclaw room templates            # 列出可用模板
+xclaw room ls | revive | kill <rid> | prune
+xclaw room attach <rid>         # 重新进入某房间的 tmux
 ```
 
 队长(team-lead)收到议题后先发「需求复述 + 方案 + 分工」@你确认,确认后才组队;辩论 / 协作过程镜像到飞书话题,你随时 @ 某个 bot 插话。
@@ -83,7 +83,7 @@ clawx room attach <rid>         # 重新进入某房间的 tmux
 
 | 用途 | 位置 |
 |---|---|
-| 单 app(solo / daemon) | `~/.config/clawx/config.json`(`clawx init` 生成) |
+| 单 app(solo / daemon) | `~/.config/clawx/config.json`(`xclaw init` 生成) |
 | 多 bot fleet(room) | `~/.config/clawx/lark-apps.json`(手写,见 setup doc) |
 | 场景模板 | 项目级 `<cwd>/.forge/templates/<名>.md`,全局 `~/.config/clawx/templates/<名>.md` |
 | 代理 | 默认 `http://127.0.0.1:7890`,用 `CLAWX_PROXY_URL` 覆盖 |
