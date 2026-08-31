@@ -28,7 +28,7 @@ import { classifyReplState } from './repl-watchdog.js'
  * just re-read the store and trust that the session_name still exists.
  */
 
-const TMUX_NAME_PREFIX = 'clawx-'
+const TMUX_NAME_PREFIX = 'xclaw-'
 
 export interface CreateOptions {
   /** Stable identifier (chat:oc_xxx, web-conv id, etc.). Used as the

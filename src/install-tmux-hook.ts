@@ -125,7 +125,7 @@ function resolveHookCommand(): string {
   for (const dir of pathDirs) {
     if (!dir) continue
     if (dir.includes('/fnm_multishells/')) continue // ephemeral
-    const candidate = path.join(dir, 'clawx')
+    const candidate = path.join(dir, 'xclaw')
     try {
       const st = fs.statSync(candidate)
       if (st.isFile()) return `${candidate} tmux-hook`
@@ -136,7 +136,7 @@ function resolveHookCommand(): string {
 
   // 3. Last resort: trust PATH lookup. Will likely fail at hook-fire
   // time but at least error visibly so the user knows to set up.
-  return 'clawx tmux-hook'
+  return 'xclaw tmux-hook'
 }
 
 export function runInstallTmuxHook(arg?: string): void {

@@ -22,7 +22,7 @@ import http from 'node:http'
  * are sub-ms.
  */
 
-const SERVER_NAME = 'clawx-ops'
+const SERVER_NAME = 'xclaw-ops'
 const SERVER_VERSION = '0.1.0'
 
 interface DaemonConfig {

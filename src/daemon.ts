@@ -19,7 +19,7 @@ const pm2x = pm2Default as unknown as {
 
 import type { CliOverrides } from './cli.js'
 
-const PROC_NAME = 'clawx'
+const PROC_NAME = 'xclaw'
 
 interface Pm2Proc {
   name?: string
