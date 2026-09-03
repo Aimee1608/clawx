@@ -38,7 +38,7 @@ function resolveHookCommand(): string {
   for (const c of [path.resolve(here, 'cli.js'), path.resolve(here, 'cli.ts')]) {
     if (fs.existsSync(c)) return `${process.execPath} ${c} codex-hook`
   }
-  return 'clawx codex-hook'
+  return 'xclaw codex-hook'
 }
 
 export function runInstallCodexHook(arg?: string): void {
@@ -70,19 +70,19 @@ export function runInstallCodexHook(arg?: string): void {
   doc.hooks = hooks
   writeHooks(p, doc)
   if (remove) {
-    process.stdout.write(`Removed clawx Codex hooks from ${p}.\n`)
+    process.stdout.write(`Removed xclaw Codex hooks from ${p}.\n`)
   } else {
     process.stdout.write(
       [
-        `✓ Installed clawx Codex UserPromptSubmit + Stop hooks → ${p}`,
+        `✓ Installed xclaw Codex UserPromptSubmit + Stop hooks → ${p}`,
         `  command: ${resolveHookCommand()}`,
         '',
         'Codex requires non-managed hooks to be trusted. If prompted in the TUI,',
-        'open /hooks and trust the clawx-codex-hook entries. clawx tmux',
+        'open /hooks and trust the clawx-codex-hook entries. xclaw tmux',
         '--agent codex also launches with --dangerously-bypass-hook-trust so',
         'trusted dev-box automation can run without an invisible prompt.',
         '',
-        'To remove: `clawx install-codex-hook --remove`',
+        'To remove: `xclaw install-codex-hook --remove`',
         '',
       ].join('\n'),
     )

@@ -258,7 +258,7 @@ const HTML_FALLBACK_404 = `<!doctype html>
 <html>
 <head><meta charset="utf-8"><title>clawx — web assets missing</title></head>
 <body style="font-family: -apple-system, sans-serif; padding: 2rem; max-width: 640px; margin: 0 auto;">
-<h1>clawx web UI not built</h1>
+<h1>xclaw web UI not built</h1>
 <p>The API is running but the frontend bundle at <code>dist/web-assets/</code>
 is missing.</p>
 <p>If you're developing locally, run:</p>
@@ -421,7 +421,7 @@ function validateScheduleInput(
         return 'tmuxSessionId is only valid for kind=prompt schedules'
       }
       if (!knownTmuxSessionIds.has(sid)) {
-        return `tmuxSessionId "${sid}" is not a live clawx tmux session`
+        return `tmuxSessionId "${sid}" is not a live xclaw tmux session`
       }
     }
   }
@@ -708,7 +708,7 @@ export function startWebServer(opts: WebServerOptions): http.Server {
       }
 
       // ── Rooms (forge-room multi-agent teams) ────────────────
-      // Read-only list, mirroring `clawx room ls`. Picks just the
+      // Read-only list, mirroring `xclaw room ls`. Picks just the
       // fields the dashboard table renders — the full RoomState carries
       // bridge bookkeeping (jsonl offsets, ping watermarks) the UI
       // doesn't need.
@@ -928,7 +928,7 @@ export function startWebServer(opts: WebServerOptions): http.Server {
 
       // POST /api/tmux-sessions — create a new one (single uniform
       // endpoint used by bot's /new-tmux command, the web TmuxTab
-      // "create" form, AND the `clawx tmux` CLI subcommand).
+      // "create" form, AND the `xclaw tmux` CLI subcommand).
       //
       // Body: { sessionId?, cwd, label?, withThread? }
       // - sessionId: defaults to `cli-tmux-<8hex>` so callers don't
@@ -1637,7 +1637,7 @@ export function startWebServer(opts: WebServerOptions): http.Server {
               const known = new Set(tmuxSessionStore.entries().map((e) => e.sessionId))
               if (!known.has(sid)) {
                 sendJson(res, 400, {
-                  error: `tmuxSessionId "${sid}" is not a live clawx tmux session`,
+                  error: `tmuxSessionId "${sid}" is not a live xclaw tmux session`,
                 })
                 return
               }

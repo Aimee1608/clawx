@@ -11,7 +11,7 @@ import {
 } from './config.js'
 
 /**
- * `clawx init` — first-run interactive setup. Walks the operator
+ * `xclaw init` — first-run interactive setup. Walks the operator
  * through the per-user values that the daemon refuses to start without,
  * writes them to `~/.config/clawx/config.json` (mode 0600), then
  * offers to register the Stop hook and run the doctor.
@@ -106,11 +106,11 @@ export async function runInit(): Promise<void> {
       [
         '',
         '下一步:',
-        '  1) clawx doctor       — 自检（claude 二进制、proxy、Lark token）',
-        '  2) clawx daemon start — 后台启动 daemon (pm2 托管)',
+        '  1) xclaw doctor       — 自检（claude 二进制、proxy、Lark token）',
+        '  2) xclaw daemon start — 后台启动 daemon (pm2 托管)',
         '  3) 在 Lark 里 DM bot 任意一句，userOpenId 会自动写入',
         '  4) 在 Lark 话题群里 /new-tmux <cwd> [标题]，或者跑',
-        '     `clawx tmux <cwd> --label "..."` 起第一个 session',
+        '     `xclaw tmux <cwd> --label "..."` 起第一个 session',
         '',
       ].join('\n'),
     )

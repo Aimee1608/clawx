@@ -29,12 +29,12 @@ export interface RunTmuxOptions {
 }
 
 /**
- * `clawx tmux [cwd] [--resume <uuid>]` — third entry point (alongside
+ * `xclaw tmux [cwd] [--resume <uuid>]` — third entry point (alongside
  * Lark's `/new-tmux` and the web Tmux tab) for spawning a long-running
  * claude REPL inside a tmux session.
  *
  * Flow:
- *   1. POST to the running clawx daemon on `:8124` so the session
+ *   1. POST to the running xclaw daemon on `:8124` so the session
  *      gets registered in tmux-session-store AND a Lark thread is
  *      created (when configured). Result: bot, web, and this CLI all
  *      see the same session, can route inbound messages, and fan out
@@ -43,8 +43,8 @@ export interface RunTmuxOptions {
  *      becomes the live REPL view. Detach with Ctrl-b d.
  *
  * Requires:
- *   - clawx daemon running locally (`clawx start` or
- *     `clawx daemon start`).
+ *   - xclaw daemon running locally (`xclaw start` or
+ *     `xclaw daemon start`).
  *   - tmux binary on PATH.
  */
 export async function runTmux(opts: RunTmuxOptions = {}): Promise<void> {
@@ -66,7 +66,7 @@ export async function runTmux(opts: RunTmuxOptions = {}): Promise<void> {
     if (!detected) {
       process.stderr.write(
         `✗ couldn't auto-detect cwd for ${agent} session ${resumeUuid}\n` +
-          `  retry with explicit cwd: clawx tmux --agent ${agent} --resume ${resumeUuid} <cwd>\n`,
+          `  retry with explicit cwd: xclaw tmux --agent ${agent} --resume ${resumeUuid} <cwd>\n`,
       )
       process.exit(1)
     }
@@ -130,7 +130,7 @@ export async function runTmux(opts: RunTmuxOptions = {}): Promise<void> {
   if (!result.ok || !result.entry) {
     process.stderr.write(`✗ ${result.error ?? 'unknown failure'}\n`)
     process.stderr.write(
-      `Hint: is the clawx daemon running? Try \`curl http://${host}:${port}/api/status\`.\n`,
+      `Hint: is the xclaw daemon running? Try \`curl http://${host}:${port}/api/status\`.\n`,
     )
     process.exit(1)
   }
@@ -245,19 +245,19 @@ export async function runTmux(opts: RunTmuxOptions = {}): Promise<void> {
     // Respawns a fresh process on the SAME conversation: context preserved
     // via --resume, and clawx re-binds this same Lark thread.
     process.stdout.write(
-      `  Resume:     clawx solo --agent ${entry.agentKind ?? 'claude'} --resume ${resumeId}\n`,
+      `  Resume:     xclaw solo --agent ${entry.agentKind ?? 'claude'} --resume ${resumeId}\n`,
     )
   } else if (!stillAlive) {
     // Session died before it ever bound an agent session id (nothing to
     // --resume) — the only way forward is a fresh start in the same cwd.
     process.stdout.write(
-      `  Recreate:   clawx solo ${JSON.stringify(entry.cwd)} --agent ${entry.agentKind ?? 'claude'}\n`,
+      `  Recreate:   xclaw solo ${JSON.stringify(entry.cwd)} --agent ${entry.agentKind ?? 'claude'}\n`,
     )
   }
   // Tear the session down completely: kills the tmux session if it's
   // still around, drops the store record, and posts a 🧹 notice into the
   // Lark thread.
-  process.stdout.write(`  清理/Kill:  clawx kill ${entry.sessionId}\n`)
+  process.stdout.write(`  清理/Kill:  xclaw kill ${entry.sessionId}\n`)
   if (entry.threadId) {
     process.stdout.write(`  Lark 话题:   ${entry.threadId}\n`)
   }
@@ -272,7 +272,7 @@ export async function runTmux(opts: RunTmuxOptions = {}): Promise<void> {
  * (resume session — uuid implies cwd via the jsonl). */
 export function resolveCwdArg(arg: string | undefined): string | undefined {
   if (!arg || !arg.trim()) return undefined
-  // A `tmuxDirs` alias (e.g. `clawx solo riff`) wins over path
+  // A `tmuxDirs` alias (e.g. `xclaw solo riff`) wins over path
   // resolution, so the same aliases work from the terminal as from
   // Feishu `/new-solo`. resolveTmuxDir returns the arg unchanged on a miss.
   const resolved = resolveTmuxDir(arg.trim(), loadUserConfigFile().tmuxDirs)
@@ -320,7 +320,7 @@ function detectCwdFromUuid(uuid: string): string | undefined {
 }
 
 // ── tmux admin: ls / kill / prune ──────────────────────────────────
-// `clawx tmux <ls|kill|prune>` manages existing sessions through the
+// `xclaw tmux <ls|kill|prune>` manages existing sessions through the
 // daemon's HTTP API, so a kill always does tmux kill-session + store
 // cleanup together (never leaving a zombie record). Liveness is checked
 // locally with `tmux has-session` since the daemon's list doesn't carry
@@ -345,7 +345,7 @@ export async function runTmuxAdmin(
   if (action === 'kill') {
     const target = sid?.trim()
     if (!target) {
-      process.stderr.write('✗ usage: clawx kill <sid>\n')
+      process.stderr.write('✗ usage: xclaw kill <sid>\n')
       process.exit(1)
     }
     const r = await daemonJson(host, port, 'DELETE', `/api/tmux-sessions/${encodeURIComponent(target)}`)
@@ -389,7 +389,7 @@ export async function runTmuxAdmin(
       const parts: string[] = []
       if (stale) parts.push(`${stale} stale (tmux 在 / claude 已退出)`)
       if (gone) parts.push(`${gone} gone (tmux 已无 / 记录残留)`)
-      process.stdout.write(`\n  ${parts.join(', ')} — clean up with: clawx tmux prune\n`)
+      process.stdout.write(`\n  ${parts.join(', ')} — clean up with: xclaw tmux prune\n`)
     }
     return
   }

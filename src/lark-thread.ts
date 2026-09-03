@@ -4,7 +4,7 @@ import { log } from './logger.js'
 
 /**
  * Thin wrapper over the `@larksuiteoapi/node-sdk` Lark Client for the
- * narrow "Feishu thread per clawx tmux session" use case.
+ * narrow "Feishu thread per xclaw tmux session" use case.
  *
  * Lark has no dedicated "create thread" endpoint: you post a regular
  * message into the chat (which then serves as the thread root), and

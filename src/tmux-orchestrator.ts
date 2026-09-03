@@ -44,7 +44,7 @@ export interface CreateOptions {
   /** If set, the new pane runs `claude --resume <uuid>` instead of
    * starting a fresh session. The recorded `claudeUuid` is this value
    * (so Stop-hook turn-done routing keeps working) and the jsonl on
-   * disk continues to be appended. Used by `clawx tmux --resume`
+   * disk continues to be appended. Used by `xclaw tmux --resume`
    * to recover from an accidentally killed pane while keeping the
    * prior conversation context. */
   resumeUuid?: string
@@ -601,8 +601,8 @@ export function createTmuxOrchestrator(
       const claudeUuid = agentKind === 'claude' ? agentSessionId : undefined
 
       const banner = isResume
-        ? `🔧 clawx tmux session (resumed)\n  sid: %s\n  agent: %s\n  id: %s\n  cwd: %s\n\n`
-        : `🔧 clawx tmux session\n  sid: %s\n  agent: %s\n  id: %s\n  cwd: %s\n\n`
+        ? `🔧 xclaw tmux session (resumed)\n  sid: %s\n  agent: %s\n  id: %s\n  cwd: %s\n\n`
+        : `🔧 xclaw tmux session\n  sid: %s\n  agent: %s\n  id: %s\n  cwd: %s\n\n`
       const cmd =
         `printf '${banner}' ` +
         `${shQ(opts.sessionId)} ${shQ(agentKind)} ${shQ(launch.bannerId)} ${shQ(opts.cwd)}; ` +

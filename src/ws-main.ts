@@ -296,7 +296,7 @@ interface WsConfig {
    * /new-tmux refuses to run without it, but the rest of WS mode works
    * normally. */
   tmuxThreadChatId?: string
-  /** Named extra topic groups for `clawx tmux --group <name>`. */
+  /** Named extra topic groups for `xclaw tmux --group <name>`. */
   tmuxThreadChats?: Record<string, string>
   /** Directory aliases for `/new-solo <别名>` quick session creation. */
   tmuxDirs?: Record<string, string>
@@ -435,7 +435,7 @@ function stripMentions(text: string, mentions?: Array<{ key?: string; name?: str
 }
 
 /**
- * WSClient long-connection entry point. Invoked by `clawx start --ws`.
+ * WSClient long-connection entry point. Invoked by `xclaw start --ws`.
  * Exported rather than self-running so the CLI dispatcher can pass in
  * flag overrides that take precedence over env + config file.
  */
@@ -844,7 +844,7 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
             }
 
             // Control word: a bare `/kill` tears the session down — same as
-            // `clawx kill <sid>`. The slash makes it deliberate enough to skip a
+            // `xclaw kill <sid>`. The slash makes it deliberate enough to skip a
             // confirm. Executes via the daemon's own DELETE so the full cleanup
             // + 🧹 notice runs. Strict whole-message match + no attachments so a
             // sentence merely containing "/kill" can't trigger it.
@@ -858,7 +858,7 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
               })
               if (!ok && entry.rootMessageId) {
                 await larkThread
-                  .postInThread({ rootMessageId: entry.rootMessageId, text: `✗ 关闭「${label}」失败,请重试或用 clawx kill ${entry.sessionId}` })
+                  .postInThread({ rootMessageId: entry.rootMessageId, text: `✗ 关闭「${label}」失败,请重试或用 xclaw kill ${entry.sessionId}` })
                   .catch(() => {})
               }
               return

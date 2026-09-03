@@ -17,8 +17,8 @@ import { defaultTmuxSessionsPath } from './tmux-session-store.js'
  * cheap on the hot path:
  *   1. Read the small tmux-sessions.json
  *   2. Look up the firing session_id (= claude UUID); exit silently if
- *      it's not a clawx tmux session
- *   3. POST to the local clawx daemon so the heavy lifting runs there
+ *      it's not a xclaw tmux session
+ *   3. POST to the local xclaw daemon so the heavy lifting runs there
  *
  * If the daemon isn't running, log to stderr and exit 0 — hooks MUST
  * NOT block the user's interactive claude, so we never error out.
@@ -31,7 +31,7 @@ export async function runTmuxHook(): Promise<void> {
   } catch (err) {
     // Malformed stdin → not our problem; let claude continue.
     process.stderr.write(
-      `[clawx tmux-hook] failed to parse stdin: ${(err as Error).message}\n`,
+      `[xclaw tmux-hook] failed to parse stdin: ${(err as Error).message}\n`,
     )
     return
   }
@@ -145,14 +145,14 @@ export async function runTmuxHook(): Promise<void> {
           resolve(false)
         } else {
           process.stderr.write(
-            `[clawx tmux-hook] daemon unreachable (${err.code ?? 'unknown'}): ${err.message}\n`,
+            `[xclaw tmux-hook] daemon unreachable (${err.code ?? 'unknown'}): ${err.message}\n`,
           )
           resolve(true) // skip retry for non-recoverable errors
         }
       })
       req.on('timeout', () => {
         req.destroy()
-        process.stderr.write('[clawx tmux-hook] daemon timeout\n')
+        process.stderr.write('[xclaw tmux-hook] daemon timeout\n')
         resolve(true) // don't retry timeouts — daemon is up but stuck
       })
       req.write(body)
@@ -164,7 +164,7 @@ export async function runTmuxHook(): Promise<void> {
   }
   if (!posted) {
     process.stderr.write(
-      `[clawx tmux-hook] daemon unreachable after ${MAX_ATTEMPTS} attempts (was it restarting?)\n`,
+      `[xclaw tmux-hook] daemon unreachable after ${MAX_ATTEMPTS} attempts (was it restarting?)\n`,
     )
   }
 
@@ -176,7 +176,7 @@ export async function runTmuxHook(): Promise<void> {
   if (isAskUserQuestion) {
     process.stderr.write(
       [
-        'AskUserQuestion is BLOCKED in this clawx tmux session.',
+        'AskUserQuestion is BLOCKED in this xclaw tmux session.',
         'The user is replying via a Lark thread, not the terminal UI,',
         'so your interactive picker would be invisible and unanswerable.',
         '',

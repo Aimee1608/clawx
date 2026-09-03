@@ -159,7 +159,7 @@ export function createAgentMcpServer(): McpServer {
         cwd,
         label,
         group,
-        source: 'cli', // surfaces as "来自 终端 (clawx tmux)" in seed
+        source: 'cli', // surfaces as "来自 终端 (xclaw tmux)" in seed
       })
       return textResult(data)
     },

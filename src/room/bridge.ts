@@ -119,7 +119,7 @@ function seedText(room: RoomState, memberNames?: string[], userOpenId?: string):
   const lines = [
     `🆕 ${room.label}`,
     `🆔 rid: ${room.id}`,
-    `🕒 ${created} · 来自 终端 (clawx room) · 模板: ${room.template ?? 'design'}`,
+    `🕒 ${created} · 来自 终端 (xclaw room) · 模板: ${room.template ?? 'design'}`,
     `📁 ${room.cwd}`,
     `💻 围观: tmux attach -t ${room.tmuxSession}`,
   ]

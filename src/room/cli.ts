@@ -1,4 +1,4 @@
-// `clawx room` subcommand — multi-agent room (Agent Teams + Feishu topic
+// `xclaw room` subcommand — multi-agent room (Agent Teams + Feishu topic
 // bridge). Self-parses its own argv slice so it stays independent of the
 // main CLI's option schema. Entry: runRoomCli(argv).
 import fs from 'node:fs'
@@ -44,18 +44,18 @@ function parseArgs(argv: string[]): ParsedArgs {
 const ROOM_SUBS = new Set(['init', 'ls', 'kill', 'prune', 'bridge', 'attach', 'revive', 'templates', 'help'])
 
 const ROOM_USAGE = [
-  'clawx room — 多 agent 房间(Agent Teams + 飞书话题桥):',
-  '  clawx room [cwd] --label "标题" [--template <名>] [--brief "议题全文" | --brief-file <f>] [--group <群名> | --chat <oc_...>]',
+  'xclaw room — 多 agent 房间(Agent Teams + 飞书话题桥):',
+  '  xclaw room [cwd] --label "标题" [--template <名>] [--brief "议题全文" | --brief-file <f>] [--group <群名> | --chat <oc_...>]',
   '                              --template/--tpl 选场景模板(不给用 design);--group 选注册过的话题群',
   '                              建房 → 桥转后台 → 直接 attach 进 tmux(Ctrl-b d 退出,房间照跑)',
-  '  clawx room init           交互配置多 bot fleet(校验 token + 探 open_id → lark-apps.json)',
-  '  clawx room templates      列出可用模板(项目 .forge/templates + 全局 + 内置)',
-  '  clawx room attach <rid>   重新进入某房间的 tmux(顺带确保桥活着)',
-  '  clawx room revive         确保所有活房间的桥都在后台跑(幂等,可重复执行)',
-  '  clawx room ls             列房间(● live / ✗ gone)',
-  '  clawx room kill <rid>     杀房间(tmux + 桥)',
-  '  clawx room prune          清理已结束/已死的房间',
-  '  clawx room bridge <rid>   前台跑桥(仅调试;有桥在跑会自动退出,不会双开)',
+  '  xclaw room init           交互配置多 bot fleet(校验 token + 探 open_id → lark-apps.json)',
+  '  xclaw room templates      列出可用模板(项目 .forge/templates + 全局 + 内置)',
+  '  xclaw room attach <rid>   重新进入某房间的 tmux(顺带确保桥活着)',
+  '  xclaw room revive         确保所有活房间的桥都在后台跑(幂等,可重复执行)',
+  '  xclaw room ls             列房间(● live / ✗ gone)',
+  '  xclaw room kill <rid>     杀房间(tmux + 桥)',
+  '  xclaw room prune          清理已结束/已死的房间',
+  '  xclaw room bridge <rid>   前台跑桥(仅调试;有桥在跑会自动退出,不会双开)',
 ].join('\n')
 
 /** Resolve the main `clawx` CLI entry + how to spawn it, from this
@@ -120,10 +120,10 @@ function printDetachSummary(room: { id: string; label?: string; cwd: string; thr
   console.log(`  rid:      ${room.id}`)
   console.log(`  cwd:      ${room.cwd}`)
   if (room.threadId) console.log(`  飞书话题:  ${room.threadId}`)
-  console.log(`  重进围观:  clawx room attach ${room.id}`)
-  console.log(`  列出房间:  clawx room ls`)
-  console.log(`  关闭房间:  clawx kill ${room.id}`)
-  console.log(`  清理死房:  clawx room prune`)
+  console.log(`  重进围观:  xclaw room attach ${room.id}`)
+  console.log(`  列出房间:  xclaw room ls`)
+  console.log(`  关闭房间:  xclaw kill ${room.id}`)
+  console.log(`  清理死房:  xclaw room prune`)
   console.log('')
 }
 
@@ -137,7 +137,7 @@ async function cmdRoom(positionals: string[], opts: Record<string, string>): Pro
   }
 
   if (sub === undefined) {
-    // Bare `clawx room` with no cwd/label/brief is almost always an
+    // Bare `xclaw room` with no cwd/label/brief is almost always an
     // accidental invocation — show usage instead of spawning a room.
     if (!first && !opts.cwd && !opts.label && !opts.brief && !opts.topic && !opts['brief-file']) {
       console.log(ROOM_USAGE)
@@ -252,7 +252,7 @@ async function cmdRoom(positionals: string[], opts: Record<string, string>): Pro
     for (const t of tpls) {
       console.log(`  ${t.name.padEnd(14)} ${mark[t.source]}  ${t.description}`)
     }
-    console.log(`\n用法: clawx room . --template <名>`)
+    console.log(`\n用法: xclaw room . --template <名>`)
     console.log(`新增: 放 <cwd>/.forge/templates/<名>.md(项目级) 或 ~/.config/clawx/templates/<名>.md(全局)`)
     return
   }
@@ -276,7 +276,7 @@ async function cmdRoom(positionals: string[], opts: Record<string, string>): Pro
 /** Tear down a room by id: farewell ping into the topic → kill the bridge
  * pid(s) → kill the tmux session → mark the room `ended`. Returns false
  * WITHOUT side effects when no room owns this id, so the unified top-level
- * `clawx kill` can probe rooms first and fall through to a solo session.
+ * `xclaw kill` can probe rooms first and fall through to a solo session.
  * Best-effort on the Feishu ping — a hiccup there must never block teardown. */
 export async function killRoomById(id: string): Promise<boolean> {
   const room = loadRoom(id)
@@ -289,7 +289,7 @@ export async function killRoomById(id: string): Promise<boolean> {
           .reader()
           .replyInThread(
             room.threadRootId,
-            `🔚 房间已关闭(rid ${id})。tmux 会话与桥接已停;要继续协作请用 clawx room 新建一个。`,
+            `🔚 房间已关闭(rid ${id})。tmux 会话与桥接已停;要继续协作请用 xclaw room 新建一个。`,
           )
       }
     } catch {

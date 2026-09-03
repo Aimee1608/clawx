@@ -230,7 +230,7 @@ export function sourceLabel(s: SendSource | 'unknown'): string {
     case 'web':
       return 'web'
     case 'cli':
-      return '终端 (clawx tmux)'
+      return '终端 (xclaw tmux)'
     case 'lark':
       return 'Lark'
     case 'terminal':

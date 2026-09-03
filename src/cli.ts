@@ -3,20 +3,20 @@
  * `clawx` CLI entry.
  *
  * Subcommands:
- *   clawx start             Hub mode (poll agent-platform short-connection webhook)
- *   clawx start --ws        WSClient long-connection directly to Feishu
- *   clawx daemon start      Run as pm2-managed background process
- *   clawx daemon stop       Stop + remove the pm2-managed process
- *   clawx daemon status     Show pm2 status for clawx
- *   clawx daemon logs       Tail pm2 logs (Ctrl-C to exit)
- *   clawx web               Open the web UI in the default browser
+ *   xclaw start             Hub mode (poll agent-platform short-connection webhook)
+ *   xclaw start --ws        WSClient long-connection directly to Feishu
+ *   xclaw daemon start      Run as pm2-managed background process
+ *   xclaw daemon stop       Stop + remove the pm2-managed process
+ *   xclaw daemon status     Show pm2 status for clawx
+ *   xclaw daemon logs       Tail pm2 logs (Ctrl-C to exit)
+ *   xclaw web               Open the web UI in the default browser
  *   clawx mcp-server        Start the clawx-manager MCP server on stdio
  *                             (consumed by the bot's claude subprocess via --mcp-config)
- *   clawx install-skill     Copy the clawx-manager skill to ~/.claude/skills/
+ *   xclaw install-skill     Copy the clawx-manager skill to ~/.claude/skills/
  *   clawx uninstall-skill   Remove the installed clawx-manager skill
- *   clawx doctor            Run environment diagnostics (claude CLI, HUB reachability, token)
- *   clawx version           Print version
- *   clawx help              Print usage
+ *   xclaw doctor            Run environment diagnostics (claude CLI, HUB reachability, token)
+ *   xclaw version           Print version
+ *   xclaw help              Print usage
  *
  * CLI flags (override env + config file):
  *   --cwd <path>              Override CLAUDE_CWD
@@ -67,44 +67,44 @@ function printUsage(): void {
       '  · solo — single agent (tmux session)   · room — multi-agent (Agent Teams + Lark)',
       '',
       'Usage:',
-      '  clawx init                          First-run interactive setup',
+      '  xclaw init                          First-run interactive setup',
       '                                          (Lark app, chat_id, workspace…)',
-      '  clawx start [flags...]              Run in foreground (default)',
-      '  clawx daemon start [flags]          Run as pm2-managed background process',
-      '  clawx daemon stop                   Stop + remove pm2 process',
-      '  clawx daemon status                 Show pm2 status',
-      '  clawx daemon logs                   Tail pm2 logs',
-      '  clawx tmux [cwd]                    Create a tmux+claude session via the',
+      '  xclaw start [flags...]              Run in foreground (default)',
+      '  xclaw daemon start [flags]          Run as pm2-managed background process',
+      '  xclaw daemon stop                   Stop + remove pm2 process',
+      '  xclaw daemon status                 Show pm2 status',
+      '  xclaw daemon logs                   Tail pm2 logs',
+      '  xclaw tmux [cwd]                    Create a tmux+claude session via the',
       '                                          local daemon, then attach this terminal',
       '                                          to it (third entry point alongside the',
       '                                          Lark /new-tmux command and the web tab).',
-      '  clawx tmux --resume <uuid> [cwd]    Same, but spawn `claude --resume <uuid>`',
+      '  xclaw tmux --resume <uuid> [cwd]    Same, but spawn `claude --resume <uuid>`',
       '                                          so a prior conversation continues. cwd is',
       '                                          auto-detected from the jsonl when omitted.',
-      '  clawx tmux [cwd] --label "..."      Set the Lark thread title for this session.',
+      '  xclaw tmux [cwd] --label "..."      Set the Lark thread title for this session.',
       '                                          Strongly recommended when you keep many',
       '                                          long-lived sessions in the same group.',
-      '  clawx tmux [cwd] --group <name>     Create the thread in a named group',
+      '  xclaw tmux [cwd] --group <name>     Create the thread in a named group',
       '                                          (config tmuxThreadChats); omit for default.',
-      '  clawx tmux --agent codex [cwd]      Create a tmux+Codex session. Omit',
+      '  xclaw tmux --agent codex [cwd]      Create a tmux+Codex session. Omit',
       '                                          --agent to keep the default Claude behavior.',
-      '  clawx solo [cwd] --effort <level>   Set claude reasoning depth for this',
+      '  xclaw solo [cwd] --effort <level>   Set claude reasoning depth for this',
       '                                          session: low|medium|high|xhigh|max|ultracode',
       '                                          (claude only; codex ignores it).',
-      '  clawx tmux ls                       List sessions (● alive / ✗ dead).',
-      '  clawx tmux kill <sid>               Kill a session + drop its store record.',
-      '  clawx tmux prune                    Remove all dead (zombie) session records.',
-      '  clawx solo [...]                    Alias for `clawx tmux` (single-agent).',
-      '  clawx kill <id>                     Kill any session OR room by id (solo + room).',
-      '  clawx room [cwd] --template <name>  Multi-agent room (Agent Teams + Lark topic).',
-      '  clawx room ls|revive|kill|templates Manage rooms (templates = list templates).',
-      '  clawx install-tmux-hook             Register the Stop hook in',
+      '  xclaw tmux ls                       List sessions (● alive / ✗ dead).',
+      '  xclaw tmux kill <sid>               Kill a session + drop its store record.',
+      '  xclaw tmux prune                    Remove all dead (zombie) session records.',
+      '  xclaw solo [...]                    Alias for `xclaw tmux` (single-agent).',
+      '  xclaw kill <id>                     Kill any session OR room by id (solo + room).',
+      '  xclaw room [cwd] --template <name>  Multi-agent room (Agent Teams + Lark topic).',
+      '  xclaw room ls|revive|kill|templates Manage rooms (templates = list templates).',
+      '  xclaw install-tmux-hook             Register the Stop hook in',
       '                                          ~/.claude/settings.json',
-      '  clawx install-codex-hook            Register Codex hooks in ~/.codex/hooks.json',
-      '  clawx web                           Open web UI in browser',
-      '  clawx doctor                        Run environment diagnostics',
-      '  clawx version',
-      '  clawx help',
+      '  xclaw install-codex-hook            Register Codex hooks in ~/.codex/hooks.json',
+      '  xclaw web                           Open web UI in browser',
+      '  xclaw doctor                        Run environment diagnostics',
+      '  xclaw version',
+      '  xclaw help',
       '',
       'Flags:',
       '  --cwd <path>             Override CLAUDE_CWD env',
@@ -138,11 +138,11 @@ async function main(): Promise<void> {
       cwd: { type: 'string' },
       'lark-app-id': { type: 'string' },
       'lark-app-secret': { type: 'string' },
-      resume: { type: 'string' }, // clawx tmux --resume <claudeUuid>
-      label: { type: 'string' }, // clawx tmux --label "标题"
-      group: { type: 'string' }, // clawx tmux --group <name> → topic group
-      agent: { type: 'string' }, // clawx tmux --agent <claude|codex>
-      effort: { type: 'string' }, // clawx solo --effort <low|…|ultracode> (claude only)
+      resume: { type: 'string' }, // xclaw tmux --resume <claudeUuid>
+      label: { type: 'string' }, // xclaw tmux --label "标题"
+      group: { type: 'string' }, // xclaw tmux --group <name> → topic group
+      agent: { type: 'string' }, // xclaw tmux --agent <claude|codex>
+      effort: { type: 'string' }, // xclaw solo --effort <low|…|ultracode> (claude only)
       help: { type: 'boolean', short: 'h' },
       version: { type: 'boolean', short: 'v' },
     },
@@ -232,7 +232,7 @@ async function main(): Promise<void> {
     }
     case 'solo': // alias: single-agent session (room = multi-agent)
     case 'tmux': {
-      // `clawx tmux [cwd] [--resume <uuid>] [--label "..."]` —
+      // `xclaw tmux [cwd] [--resume <uuid>] [--label "..."]` —
       // creates a new tmux session (with Lark thread when configured)
       // via the local daemon, then exec's `tmux attach` so the user's
       // terminal becomes the live REPL. Third entry point alongside
@@ -243,9 +243,9 @@ async function main(): Promise<void> {
       // cwd defaults to whatever is encoded in that uuid's jsonl.
       // --label sets the title shown in the Lark thread seed message.
       const mod = await import('./cli-tmux.js')
-      // Admin subcommands: `clawx tmux <ls|kill|prune>`. Anything else
+      // Admin subcommands: `xclaw tmux <ls|kill|prune>`. Anything else
       // in that slot is treated as a cwd → create-session (backwards
-      // compatible with `clawx tmux [cwd]`).
+      // compatible with `xclaw tmux [cwd]`).
       const sub = positionals[1]
       if (sub === 'ls' || sub === 'kill' || sub === 'prune') {
         await mod.runTmuxAdmin(sub, positionals[2])
@@ -287,11 +287,11 @@ async function main(): Promise<void> {
       // an id is a solo session (sid) or a room (rid). Probe rooms first —
       // killRoomById is side-effect-free on a miss — then fall back to the
       // daemon-owned solo session (runTmuxAdmin prints the not-found error
-      // when neither owns the id). `clawx solo kill` / `clawx room kill`
+      // when neither owns the id). `xclaw solo kill` / `xclaw room kill`
       // stay as the explicit per-kind forms.
       const id = positionals[1]
       if (!id) {
-        process.stderr.write('✗ usage: clawx kill <sid|rid>\n')
+        process.stderr.write('✗ usage: xclaw kill <sid|rid>\n')
         process.exit(1)
       }
       const roomMod = await import('./room/cli.js')

@@ -38,7 +38,7 @@ export interface UserConfigFile {
    * created. Each new tmux session gets its own thread in this group.
    * Env override: CLAWX_TMUX_THREAD_CHAT_ID. */
   tmuxThreadChatId?: string
-  /** Named extra topic groups for `clawx tmux --group <name>`, so
+  /** Named extra topic groups for `xclaw tmux --group <name>`, so
    * non-dev sessions can land in a separate Lark group. `tmuxThreadChatId`
    * stays the DEFAULT (used when no --group is passed). Each value is a
    * group chat_id the bot has been added to.
@@ -46,7 +46,7 @@ export interface UserConfigFile {
   tmuxThreadChats?: Record<string, string>
   /** Named directory aliases for quick session creation, so you don't
    * have to type full paths. Feishu `/new-solo <alias> [label]` and
-   * `clawx solo <alias>` both resolve an alias here to its path.
+   * `xclaw solo <alias>` both resolve an alias here to its path.
    * Values may begin with `~/` (expanded at read time).
    * Example: { "riff": "/home/me/agent-monorepo", "bridge": "/home/me/migrate-tools" }. */
   tmuxDirs?: Record<string, string>

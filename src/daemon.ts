@@ -142,16 +142,16 @@ export async function daemonStart(opts: { overrides: CliOverrides }): Promise<vo
       env: cleanPm2Env(),
       autorestart: true,
       max_restarts: 10,
-      // keep logs local to user so `clawx daemon logs` can tail them.
+      // keep logs local to user so `xclaw daemon logs` can tail them.
       output: path.join(process.env.HOME ?? '', '.pm2', 'logs', `${PROC_NAME}-out.log`),
       error: path.join(process.env.HOME ?? '', '.pm2', 'logs', `${PROC_NAME}-error.log`),
     })
     const first = procs[0]
     process.stdout.write(
-      `✓ clawx daemon started (pid=${first?.pid ?? '?'}, pm_id=${first?.pm_id ?? '?'}).\n` +
+      `✓ xclaw daemon started (pid=${first?.pid ?? '?'}, pm_id=${first?.pm_id ?? '?'}).\n` +
         `  Web UI: http://127.0.0.1:8124\n` +
-        `  Logs:   clawx daemon logs\n` +
-        `  Stop:   clawx daemon stop\n`,
+        `  Logs:   xclaw daemon logs\n` +
+        `  Stop:   xclaw daemon stop\n`,
     )
   } finally {
     disconnect()
@@ -167,7 +167,7 @@ export async function daemonStop(): Promise<void> {
     await pDelete(PROC_NAME).catch(() => {
       /* might already be gone */
     })
-    process.stdout.write('✓ clawx daemon stopped and removed from pm2.\n')
+    process.stdout.write('✓ xclaw daemon stopped and removed from pm2.\n')
   } finally {
     disconnect()
   }
@@ -179,7 +179,7 @@ export async function daemonStatus(): Promise<void> {
     const procs = await pList()
     const ours = procs.filter((p) => p.name === PROC_NAME)
     if (ours.length === 0) {
-      process.stdout.write('clawx daemon: not running.\n')
+      process.stdout.write('xclaw daemon: not running.\n')
       return
     }
     for (const p of ours) {
@@ -187,7 +187,7 @@ export async function daemonStatus(): Promise<void> {
       const uptimeMs = env.pm_uptime ? Date.now() - env.pm_uptime : 0
       const memMb = p.monit?.memory ? Math.round(p.monit.memory / 1024 / 1024) : 0
       process.stdout.write(
-        `clawx daemon: ${env.status ?? 'unknown'} ` +
+        `xclaw daemon: ${env.status ?? 'unknown'} ` +
           `pid=${p.pid ?? '?'} ` +
           `restarts=${env.restart_time ?? 0} ` +
           `uptime=${Math.round(uptimeMs / 1000)}s ` +

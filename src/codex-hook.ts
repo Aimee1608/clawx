@@ -12,7 +12,7 @@ export async function runCodexHook(): Promise<void> {
     const stdin = await readStdin()
     payload = stdin ? JSON.parse(stdin) : null
   } catch (err) {
-    process.stderr.write(`[clawx codex-hook] failed to parse stdin: ${(err as Error).message}\n`)
+    process.stderr.write(`[xclaw codex-hook] failed to parse stdin: ${(err as Error).message}\n`)
     ok()
     return
   }

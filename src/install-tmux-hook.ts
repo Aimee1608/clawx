@@ -5,12 +5,12 @@ import { fileURLToPath } from 'node:url'
 
 /**
  * Idempotently register the Stop hook in ~/.claude/settings.json so that
- * every claude turn on this machine fires `clawx tmux-hook`. The shim
+ * every claude turn on this machine fires `xclaw tmux-hook`. The shim
  * itself does the cheap filter for whether this is actually a clawx
  * tmux session.
  *
- * `clawx install-tmux-hook`           → install
- * `clawx install-tmux-hook --remove`  → remove
+ * `xclaw install-tmux-hook`           → install
+ * `xclaw install-tmux-hook --remove`  → remove
  */
 
 const HOOK_MARKER = 'clawx-tmux-hook-v1'
@@ -58,7 +58,7 @@ interface SettingsShape {
  * compatibility; if anything ever resurrects PreToolUse later, the
  * server-side handler is still wired up correctly.
  *
- * Re-running `clawx install-tmux-hook` after this change clears any
+ * Re-running `xclaw install-tmux-hook` after this change clears any
  * stale PreToolUse registration from previous installs (the marker-
  * based filter below strips our own entries cleanly). */
 const REGISTERED_EVENTS = ['UserPromptSubmit', 'Stop'] as const
@@ -180,7 +180,7 @@ export function runInstallTmuxHook(arg?: string): void {
     }
     writeSettings(p, settings)
     process.stdout.write(
-      `Removed clawx hooks from ${p}.\n`,
+      `Removed xclaw hooks from ${p}.\n`,
     )
     return
   }
@@ -231,21 +231,21 @@ export function runInstallTmuxHook(arg?: string): void {
 
   process.stdout.write(
     [
-      `✓ Installed clawx ${REGISTERED_EVENTS.join(' + ')} hooks → ${p}`,
+      `✓ Installed xclaw ${REGISTERED_EVENTS.join(' + ')} hooks → ${p}`,
       `  command: ${command}`,
       '',
       'UserPromptSubmit fires when the user submits a prompt — adds the',
       '⏳ reaction and (for terminal-direct input) echoes the prompt into',
       'the Lark thread. Stop fires after each assistant turn — removes ⏳',
       'and posts the final assistant text. Both shims are no-ops for',
-      'non-clawx tmux sessions.',
+      'non-xclaw tmux sessions.',
       '',
       'PreToolUse hook was REMOVED to eliminate per-tool-call Node fork',
       'overhead. ⏳ already lands at UserPromptSubmit; PreToolUse was a',
       'never-needed fallback. If you upgraded from a prior clawx, the',
       'stale registration was scrubbed automatically.',
       '',
-      'To remove: `clawx install-tmux-hook --remove`',
+      'To remove: `xclaw install-tmux-hook --remove`',
       '',
     ].join('\n'),
   )

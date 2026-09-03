@@ -5,7 +5,7 @@ import { formatSeedText, sourceLabel } from './seed-text.js'
 describe('sourceLabel', () => {
   it('labels each send source (cli carries the clawx brand — rebrand check)', () => {
     expect(sourceLabel('web')).toBe('web')
-    expect(sourceLabel('cli')).toBe('终端 (clawx tmux)')
+    expect(sourceLabel('cli')).toBe('终端 (xclaw tmux)')
     expect(sourceLabel('lark')).toBe('Lark')
     expect(sourceLabel('terminal')).toBe('终端 (直敲)')
     expect(sourceLabel('unknown')).toBe('未知')

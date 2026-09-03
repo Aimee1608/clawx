@@ -1,7 +1,7 @@
-// `clawx room init` — interactive setup for the room multi-bot fleet.
+// `xclaw room init` — interactive setup for the room multi-bot fleet.
 // Walks the operator through the per-bot App ID/Secret, validates each
 // token, auto-discovers bot open_ids, and writes ~/.config/clawx/lark-apps.json.
-// (The single-agent `clawx init` only does the solo config.json; this is
+// (The single-agent `xclaw init` only does the solo config.json; this is
 // the room counterpart.)
 import readline from 'node:readline/promises'
 import { stdin, stdout } from 'node:process'
@@ -32,7 +32,7 @@ export async function runRoomInit(): Promise<void> {
       [
         '',
         '┌────────────────────────────────────────────────┐',
-        '│ clawx room init — 多 bot fleet 配置向导          │',
+        '│ xclaw room init — 多 bot fleet 配置向导          │',
         '└────────────────────────────────────────────────┘',
         '',
         '会问你:话题群 chat_id + 3 个 bot(队长/主案/质询)的 App ID/Secret。',
@@ -115,7 +115,7 @@ export async function runRoomInit(): Promise<void> {
         '',
         '下一步:',
         '  1) 确认 3 个 bot 都已拉进话题群',
-        '  2) clawx room <cwd> --template dev --brief "你的议题"',
+        '  2) xclaw room <cwd> --template dev --brief "你的议题"',
         '  3) 你给任一 bot 发条消息,userOpenId 会自动学到(用于 @ 你)',
         '',
       ].join('\n'),
