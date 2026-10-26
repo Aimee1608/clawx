@@ -34,6 +34,7 @@ export interface UiMessage {
    * to detect "is the response complete on disk yet" without a second
    * file read. */
   stopReason?: string
+  phase?: string
 }
 
 /**

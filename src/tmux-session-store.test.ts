@@ -106,3 +106,30 @@ describe('TmuxSessionStore', () => {
     expect(s.get('s1')).toBeDefined()
   })
 })
+
+
+it('retains removed session labels across reloads without keeping live indexes', () => {
+  const store = new TmuxSessionStore({ persistPath: tmpFile })
+  store.upsert(mk('past', { label: 'r-zhoubao', claudeUuid: 'claude-old', threadId: 'thread-old' }))
+  store.remove('past')
+  const loaded = new TmuxSessionStore({ persistPath: tmpFile })
+  expect(loaded.entries()).toHaveLength(0)
+  expect(loaded.getByClaudeUuid('claude-old')).toBeUndefined()
+  expect(loaded.getByThreadId('thread-old')).toBeUndefined()
+  expect(loaded.archivedEntries()[0]).toMatchObject({ label: 'r-zhoubao', agentSessionId: 'claude-old' })
+  loaded.upsert(mk('past', { label: 'updated', claudeUuid: 'claude-old' }))
+  loaded.remove('past')
+  expect(loaded.archivedEntries()).toHaveLength(1)
+  expect(loaded.archivedEntries()[0]?.label).toBe('updated')
+})
+
+
+it('keeps distinct Codex histories when one tmux session is recreated', () => {
+  const store = new TmuxSessionStore({ persistPath: tmpFile })
+  for (const id of ['codex-first', 'codex-second']) {
+    store.upsert(mk('same-tmux', { agentKind: 'codex', agentSessionId: id, label: id }))
+    store.remove('same-tmux')
+  }
+  const restored = new TmuxSessionStore({ persistPath: tmpFile })
+  expect(restored.archivedEntries().map(e => e.agentSessionId)).toEqual(['codex-first', 'codex-second'])
+})

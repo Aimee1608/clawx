@@ -13,6 +13,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   vi.useRealTimers()
+  vi.unstubAllEnvs()
   try {
     fs.rmSync(tmpFile, { force: true })
   } catch {
@@ -61,6 +62,14 @@ const createCodex = (orch: any) =>
   orch.create({ sessionId: 'sid-1', cwd: '/tmp', agentKind: 'codex' })
 
 describe('create() 存活校验', () => {
+  it('uses the configured default when the Feishu caller omits agentKind', async () => {
+    vi.stubEnv('CLAWX_DEFAULT_AGENT', 'codex')
+    const { orch } = makeOrch([true])
+    const pending = orch.create({ sessionId: 'sid-1', cwd: '/tmp' })
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect((await pending).agentKind).toBe('codex')
+  })
+
   it('进程稳住时一次就成功,不重试', async () => {
     const { orch, store, calls } = makeOrch([true])
     const p = createCodex(orch)

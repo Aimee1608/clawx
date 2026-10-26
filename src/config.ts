@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { normalizeAgentKind, type AgentKind } from './agent-backend.js'
 
 /**
  * After the tmux-only refactor, the only config layer left is the
@@ -25,6 +26,7 @@ import path from 'node:path'
 
 /** Shape of `~/.config/clawx/config.json`. All fields optional. */
 export interface UserConfigFile {
+  defaultAgent?: AgentKind
   claudeCwd?: string
   claudeCmd?: string
   codexCmd?: string
@@ -168,4 +170,16 @@ export function expandHomePath(p: string): string {
 export function resolveTmuxDir(arg: string, dirs?: Record<string, string>): string {
   const hit = dirs?.[arg.trim()]
   return hit ? expandHomePath(hit) : arg
+}
+
+export function getDefaultAgent(): AgentKind {
+  const configured = process.env.CLAWX_DEFAULT_AGENT?.trim() || loadUserConfigFile().defaultAgent || 'claude'
+  const agent = normalizeAgentKind(configured)
+  if (!agent) throw new Error('defaultAgent / CLAWX_DEFAULT_AGENT must be claude or codex')
+  return agent
+}
+
+export function resolveNewSessionAgent(value: unknown): AgentKind | null {
+  if (value === undefined || value === null || value === '') return getDefaultAgent()
+  return normalizeAgentKind(value)
 }

@@ -65,7 +65,7 @@ export interface ReplWatchdogDeps {
    * finished assistant reply past the last turn boundary — i.e. the turn
    * completed but turn-done never landed. Absent → codex sessions are not
    * watched. */
-  codexHasFinishedReply?: (entry: TmuxSessionEntry) => Promise<boolean>
+  codexHasFinishedReply?: (entry: TmuxSessionEntry) => Promise<boolean | 'error'>
   /** Stall detector: ms since claude received a prompt and produced NOTHING
    * (no tool call, no message) — i.e. the transcript's last record is an
    * unanswered user prompt. null when not in that state. When this exceeds
@@ -129,13 +129,6 @@ export function createReplWatchdog(deps: ReplWatchdogDeps): ReplWatchdog {
       }
     }
 
-    // Only sessions with a turn in progress. turn-start sets
-    // currentTurnUserMessageId; turn-done clears it. No marker → idle is
-    // expected, nothing to watch.
-    if (!entry.currentTurnUserMessageId) {
-      latch.delete(entry.sessionId)
-      return
-    }
     // Codex: no claude pane UI to classify. Use the transcript signal — a
     // finished reply past the last turn boundary means the turn is done
     // but turn-done never fanned out (Stop hook missed). One-round grace
@@ -144,7 +137,7 @@ export function createReplWatchdog(deps: ReplWatchdogDeps): ReplWatchdog {
     // sinceMs/lastTurnAt dedup.
     if ((entry.agentKind ?? 'claude') === 'codex') {
       if (!deps.codexHasFinishedReply) return
-      let finished = false
+      let finished: boolean | 'error' = false
       try {
         finished = await deps.codexHasFinishedReply(entry)
       } catch {
@@ -154,7 +147,8 @@ export function createReplWatchdog(deps: ReplWatchdogDeps): ReplWatchdog {
         latch.delete(entry.sessionId)
         return
       }
-      if (latch.get(entry.sessionId) !== 'idle') {
+      if (finished !== 'error' && !entry.currentTurnUserMessageId) return
+      if (finished !== 'error' && latch.get(entry.sessionId) !== 'idle') {
         latch.set(entry.sessionId, 'idle')
         return
       }
@@ -171,6 +165,13 @@ export function createReplWatchdog(deps: ReplWatchdogDeps): ReplWatchdog {
           err: err?.message ?? String(err),
         })
       }
+      return
+    }
+    // Only sessions with a turn in progress. turn-start sets
+    // currentTurnUserMessageId; turn-done clears it. No marker → idle is
+    // expected, nothing to watch.
+    if (!entry.currentTurnUserMessageId) {
+      latch.delete(entry.sessionId)
       return
     }
     let capture = ''

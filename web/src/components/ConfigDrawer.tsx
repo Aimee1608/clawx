@@ -13,6 +13,7 @@ import {
 import type { ConfigResponse } from '@/api'
 
 export const CONFIG_FIELDS: Array<{ key: keyof ConfigResponse['config']; label: string; hint: string; secret?: boolean }> = [
+  { key: 'defaultAgent', label: 'Default agent', hint: 'Used for new solo sessions unless an agent is explicitly selected.' },
   { key: 'claudeCwd', label: 'CLAUDE_CWD', hint: 'working directory for claude subprocess' },
   { key: 'claudeCmd', label: 'CLAUDE_CMD', hint: 'binary name (default: claude)' },
   { key: 'larkAppId', label: 'LARK_APP_ID', hint: 'Feishu app id' },
@@ -38,7 +39,8 @@ export function ConfigDrawer({
 }: ConfigDrawerProps): JSX.Element {
   async function handle(ev: React.FormEvent<HTMLFormElement>): Promise<void> {
     ev.preventDefault()
-    const fd = new FormData(ev.currentTarget)
+    const form = ev.currentTarget
+    const fd = new FormData(form)
     const body: Record<string, string> = {}
     for (const f of CONFIG_FIELDS) {
       const v = String(fd.get(f.key) ?? '').trim()
@@ -46,7 +48,7 @@ export function ConfigDrawer({
     }
     await onSubmit(body)
     // Caller decides whether to clear fields or close drawer; we just hand off.
-    if (Object.keys(body).length > 0) ev.currentTarget.reset()
+    if (Object.keys(body).length > 0) form.reset()
   }
 
   return (
@@ -76,14 +78,25 @@ export function ConfigDrawer({
                 <Label htmlFor={f.key} className="font-mono text-xs text-muted-foreground">
                   {f.label}
                 </Label>
-                <Input
+                {f.key === 'defaultAgent' ? (
+                  <select
+                    key={plain}
+                    id={f.key}
+                    name={f.key}
+                    defaultValue={plain || 'claude'}
+                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="claude">Claude Code</option>
+                    <option value="codex">Codex</option>
+                  </select>
+                ) : <Input
                   id={f.key}
                   name={f.key}
                   type={isSecret ? 'password' : 'text'}
                   placeholder={placeholder}
                   defaultValue={plain}
                   autoComplete="off"
-                />
+                />}
                 <p className="text-xs text-muted-foreground">{f.hint}</p>
               </div>
             )

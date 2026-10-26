@@ -68,6 +68,7 @@ export function AllClaudeSessionsPanel({
           s.cwd,
           s.projectDir,
           s.firstPrompt,
+          s.label,
           s.entrypoint,
           s.scheduleName,
         ]

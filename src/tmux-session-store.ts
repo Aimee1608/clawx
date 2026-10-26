@@ -81,12 +81,14 @@ export function defaultTmuxSessionsPath(): string {
 interface DiskShape {
   version: 1
   sessions: TmuxSessionEntry[]
+  archived?: TmuxSessionEntry[]
 }
 
 const EMPTY: DiskShape = { version: 1, sessions: [] }
 
 export class TmuxSessionStore {
   private readonly persistPath: string
+  private archived: TmuxSessionEntry[] = []
   private byId: Map<string, TmuxSessionEntry> = new Map()
   private byTmuxName: Map<string, TmuxSessionEntry> = new Map()
   private byClaudeUuid: Map<string, TmuxSessionEntry> = new Map()
@@ -105,6 +107,7 @@ export class TmuxSessionStore {
         const data = JSON.parse(raw) as DiskShape
         if (data && Array.isArray(data.sessions)) {
           for (const e of data.sessions) this.indexInsert(normalizeEntry(e))
+          this.archived = (data.archived ?? []).map(normalizeEntry)
         }
       }
     } catch {
@@ -136,6 +139,7 @@ export class TmuxSessionStore {
     const data: DiskShape = {
       version: 1,
       sessions: Array.from(this.byId.values()),
+      archived: this.archived,
     }
     fs.mkdirSync(path.dirname(this.persistPath), { recursive: true })
     const tmp = `${this.persistPath}.tmp`
@@ -187,9 +191,19 @@ export class TmuxSessionStore {
     return Array.from(this.byId.values())
   }
 
+  archivedEntries(): TmuxSessionEntry[] {
+    return [...this.archived]
+  }
+
   remove(sessionId: string): boolean {
     const existing = this.byId.get(sessionId)
     if (!existing) return false
+    this.archived = this.archived.filter((e) =>
+      existing.agentSessionId
+        ? e.agentKind !== existing.agentKind || e.agentSessionId !== existing.agentSessionId
+        : e.sessionId !== existing.sessionId || !!e.agentSessionId,
+    )
+    this.archived.push(existing)
     this.indexRemove(existing)
     this.flush()
     return true

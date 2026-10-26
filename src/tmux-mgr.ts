@@ -1,4 +1,8 @@
 import { execFile } from 'node:child_process'
+import fs from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
@@ -53,7 +57,7 @@ export interface TmuxMgr {
   /** `clearFirst` 先按 Ctrl-U 清输入行。**当前无调用方**:上线后撞限额的
    * 会话出现过一次消息被吞(文本和 Enter 都没进 REPL),无法复现也无法排除
    * 是它引起的,已停用。要重新启用必须先复现那个场景并验证。 */
-  sendKeys(opts: { name: string; text: string; pressEnter?: boolean; clearFirst?: boolean }): Promise<void>
+  sendKeys(opts: { name: string; text: string; pressEnter?: boolean; clearFirst?: boolean; bracketedPaste?: boolean }): Promise<void>
   /** Send a single NAMED tmux key (e.g. 'Escape', 'C-c') to the active
    * pane — interpreted as a key name, NOT literal text. For control keys
    * like Escape (interrupt the REPL). Caller passes a fixed key name,
@@ -166,7 +170,7 @@ export function createTmuxMgr(opts: TmuxMgrOptions = {}): TmuxMgr {
       ])
     },
 
-    async sendKeys({ name, text, pressEnter, clearFirst }) {
+    async sendKeys({ name, text, pressEnter, clearFirst, bracketedPaste }) {
       assertSafeName(name)
       // Bail the pane out of copy-mode first, else the text below is
       // swallowed as copy-mode keys and the message is lost silently.
@@ -186,7 +190,20 @@ export function createTmuxMgr(opts: TmuxMgrOptions = {}): TmuxMgr {
       // input buffering — chars would land in the input box but the
       // Enter would arrive while the REPL was mid-redraw, silently
       // dropped.
-      if (text.length > 0) {
+      if (bracketedPaste && text.length > 0) {
+        const buffer = `clawx-${randomUUID()}`
+        const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'clawx-paste-'))
+        try {
+          const file = path.join(directory, 'input')
+          await fs.writeFile(file, text, { mode: 0o600 })
+          await run(['load-buffer', '-b', buffer, file])
+          await run(['paste-buffer', '-p', '-r', '-d', '-b', buffer, '-t', name])
+          await new Promise((resolve) => setTimeout(resolve, 150))
+        } finally {
+          await run(['delete-buffer', '-b', buffer]).catch(() => {})
+          await fs.rm(directory, { recursive: true, force: true })
+        }
+      } else if (text.length > 0) {
         // `--` ends tmux's option parsing so text starting with `-`
         // (e.g. a code snippet pasted from Lark like `-c file.ts` or
         // a flag-style command argument) doesn't get parsed as a

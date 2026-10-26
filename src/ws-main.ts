@@ -22,7 +22,7 @@ import { formatSeedText, buildBotReplyCard } from './seed-text.js'
 import { downloadMessageResource } from './lark-resource.js'
 import { createReplWatchdog } from './repl-watchdog.js'
 import type { AgentKind } from './agent-backend.js'
-import { locateCodexSession, readCodexMessagesFromRaw } from './codex-sessions.js'
+import { locateCodexSession, readCodexMessagesFromRaw, hasCompletedCodexTurn } from './codex-sessions.js'
 
 /** Lark content-audit error: message body contains PII / sensitive
  * data the Lark DLP flagged (e.g. email addresses, phone numbers,
@@ -645,12 +645,9 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
               (entry.lastTurnAt ? Date.parse(entry.lastTurnAt) : 0) ||
               Date.parse(entry.createdAt) ||
               0
-            return readCodexMessagesFromRaw(raw).messages.some(
-              (m) =>
-                m.role === 'assistant' &&
-                m.text.trim() &&
-                (Date.parse(m.timestamp) || 0) > sinceMs,
-            )
+            const parsed = readCodexMessagesFromRaw(raw)
+            if (!hasCompletedCodexTurn(parsed, sinceMs)) return false
+            return parsed.messages.at(-1)?.isError ? 'error' : true
           },
           // Stall detector (claude): how long the transcript's LAST record has
           // been an unanswered user prompt — i.e. claude got the message and

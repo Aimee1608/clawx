@@ -17,6 +17,7 @@ export interface MaskedSecret {
 }
 
 export interface MaskedConfig {
+  defaultAgent?: 'claude' | 'codex'
   claudeCwd?: string
   claudeCmd?: string
   larkAppId?: string
@@ -120,6 +121,7 @@ export interface CwdSuggestion {
 }
 
 export interface ClaudeSessionMeta {
+  label?: string
   uuid: string
   projectDir: string
   cwd?: string
@@ -140,6 +142,7 @@ export interface AllClaudeSessionsResponse {
 }
 
 export interface CodexSessionMeta {
+  label?: string
   id: string
   path: string
   cwd?: string

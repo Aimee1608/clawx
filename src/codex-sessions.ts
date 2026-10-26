@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import { createHash } from 'node:crypto'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -177,10 +178,12 @@ export function readCodexMessages(raw: string): UiMessage[] {
 export function readCodexMessagesFromRaw(raw: string): {
   messages: UiMessage[]
   completedTurnIds: Set<string>
+  lastCompletedAt: number
 } {
   const out: UiMessage[] = []
   const seen = new Set<string>()
   const completedTurnIds = new Set<string>()
+  let lastCompletedAt = 0
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue
     let rec: any
@@ -191,9 +194,21 @@ export function readCodexMessagesFromRaw(raw: string): {
     }
     if (rec.type === 'event_msg' && rec.payload?.type) {
       const typ = String(rec.payload.type)
+      if (typ === 'task_started' || typ === 'turn_started') lastCompletedAt = 0
       if (/task_(complete|completed|stopped|finished)|turn_(complete|completed|stopped|finished)/i.test(typ)) {
         const turnId = typeof rec.payload.turn_id === 'string' ? rec.payload.turn_id : 'unknown'
         completedTurnIds.add(turnId)
+        lastCompletedAt = Math.max(lastCompletedAt, Date.parse(rec.timestamp) || 0)
+        const error = rec.payload.error
+        const errorText = typeof error === 'string' ? error : error?.message
+        if (typeof errorText === 'string' && errorText.trim()) {
+          const uuid = `${turnId}:${rec.timestamp ?? ''}:error`
+          if (!seen.has(uuid)) {
+            seen.add(uuid)
+            out.push({ role: 'assistant', text: errorText.trim(),
+              timestamp: String(rec.timestamp ?? ''), uuid, isError: true, stopReason: 'end_turn' })
+          }
+        }
       }
     }
     if (rec.type !== 'response_item') continue
@@ -202,7 +217,7 @@ export function readCodexMessagesFromRaw(raw: string): {
     if (p.role !== 'user' && p.role !== 'assistant') continue
     const text = extractCodexText(p.content)
     if (!text.trim()) continue
-    const uuid = String(p.id ?? `${rec.timestamp ?? ''}:${out.length}`)
+    const uuid = String(p.id ?? `${rec.timestamp ?? ''}:${createHash('sha256').update(JSON.stringify([p.role, p.phase, text])).digest('hex')}`)
     if (seen.has(uuid)) continue
     seen.add(uuid)
     out.push({
@@ -210,8 +225,19 @@ export function readCodexMessagesFromRaw(raw: string): {
       text,
       timestamp: String(rec.timestamp ?? ''),
       uuid,
-      stopReason: p.role === 'assistant' ? 'end_turn' : undefined,
+      stopReason: p.role === 'assistant' && p.phase !== 'commentary' ? 'end_turn' : undefined,
+      phase: typeof p.phase === 'string' ? p.phase : undefined,
     })
   }
-  return { messages: out, completedTurnIds }
+  return { messages: out, completedTurnIds, lastCompletedAt }
+}
+
+export function hasCompletedCodexTurn(
+  parsed: ReturnType<typeof readCodexMessagesFromRaw>,
+  sinceMs: number,
+): boolean {
+  if (parsed.lastCompletedAt <= sinceMs) return false
+  const latest = parsed.messages.at(-1)
+  return latest?.role === 'assistant' &&
+    parsed.lastCompletedAt >= (Date.parse(latest.timestamp) || 0)
 }

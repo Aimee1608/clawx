@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 
 import { log } from './logger.js'
+import { getDefaultAgent } from './config.js'
 import type { AgentKind } from './agent-backend.js'
 import { waitForNewestCodexSessionForCwd } from './codex-sessions.js'
 import { createTmuxMgr, type TmuxMgr } from './tmux-mgr.js'
@@ -52,7 +53,7 @@ export interface CreateOptions {
    * applied to claude sessions; codex ignores it. Validate against
    * EFFORT_LEVELS at the entry point before passing it here. */
   effort?: string
-  /** Agent REPL to run. Defaults to Claude for backwards compatibility. */
+  /** Agent REPL to run. Omit to use the configured default. */
   agentKind?: AgentKind
 }
 
@@ -543,7 +544,7 @@ export function createTmuxOrchestrator(
 
   return {
     async create(opts: CreateOptions): Promise<TmuxSessionEntry> {
-      const agentKind: AgentKind = opts.agentKind ?? 'claude'
+      const agentKind: AgentKind = opts.agentKind ?? getDefaultAgent()
       // Lark thread carried over from a prior (now-dead) session that
       // owned the same agent session id. On resume we re-bind the new
       // process to that same thread instead of minting a fresh one.
@@ -730,7 +731,9 @@ export function createTmuxOrchestrator(
         // watchdog exists would clear nothing — leaving it to warn forever.
         armDelivery(sessionId, entry.tmuxName, text, source)
         try {
-          await mgr.sendKeys({ name: entry.tmuxName, text, pressEnter: true })
+          await mgr.sendKeys({ name: entry.tmuxName, text, pressEnter: true,
+            ...(entry.agentKind === 'codex' ? { bracketedPaste: true } : {}),
+          })
         } catch (err) {
           clearDelivery(sessionId)
           throw err

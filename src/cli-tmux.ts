@@ -6,7 +6,7 @@ import path from 'node:path'
 
 import type { AgentKind } from './agent-backend.js'
 import { locateCodexSession } from './codex-sessions.js'
-import { loadUserConfigFile, resolveTmuxDir } from './config.js'
+import { getDefaultAgent, loadUserConfigFile, resolveTmuxDir } from './config.js'
 
 export interface RunTmuxOptions {
   /** Working directory for the claude REPL. Optional when resumeUuid
@@ -51,7 +51,7 @@ export async function runTmux(opts: RunTmuxOptions = {}): Promise<void> {
   const resumeUuid = opts.resumeUuid?.trim() || undefined
   const label = opts.label?.trim() || undefined
   const group = opts.group?.trim() || undefined
-  const agent = opts.agent ?? 'claude'
+  const agent = opts.agent ?? getDefaultAgent()
   let cwd = (opts.cwd ?? '').trim()
 
   if (resumeUuid && !cwd) {

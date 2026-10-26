@@ -87,6 +87,9 @@ export function AllCodexSessionsTable({
               rows.map((s) => (
                 <TableRow key={s.id} onClick={() => onRowClick(s)} className="cursor-pointer">
                   <TableCell>
+                    {s.label ? (
+                      <div className="max-w-[320px] truncate text-sm font-medium" title={s.label}>{s.label}</div>
+                    ) : null}
                     <div onClick={(e) => e.stopPropagation()}>
                       <CopyableId value={s.id} label="codex session id" />
                     </div>
@@ -144,6 +147,7 @@ export function AllCodexSessionsTable({
               onClick={() => onRowClick(s)}
               className="block w-full px-4 py-4 text-left transition-colors active:bg-muted"
             >
+              {s.label ? <div className="mb-1 truncate text-sm font-semibold" title={s.label}>{s.label}</div> : null}
               <div className="flex items-start justify-between gap-2">
                 <div
                   className="min-w-0 flex-1 truncate text-sm font-medium"

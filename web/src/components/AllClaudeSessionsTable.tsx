@@ -92,6 +92,11 @@ export function AllClaudeSessionsTable({
                         long title doesn't compete with the uuid for the same
                         line — easier to scan when many rows share a project. */}
                     <div className="flex flex-col gap-0.5">
+                      {s.label ? (
+                        <span className="max-w-[320px] truncate text-sm font-medium" title={s.label}>
+                          {s.label}
+                        </span>
+                      ) : null}
                       {s.scheduleName || s.inBot ? (
                         <div className="flex max-w-[320px] flex-wrap items-center gap-1.5">
                           {s.scheduleName ? (
@@ -165,6 +170,7 @@ export function AllClaudeSessionsTable({
               onClick={() => onRowClick(s)}
               className="block w-full px-4 py-4 text-left transition-colors active:bg-muted"
             >
+              {s.label ? <div className="mb-1 truncate text-sm font-semibold" title={s.label}>{s.label}</div> : null}
               <div className="flex items-start justify-between gap-2">
                 <div
                   className="min-w-0 flex-1 truncate text-sm font-medium"

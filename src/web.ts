@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url'
 import type { SessionStore } from './session-store.js'
 import {
   loadUserConfigFile,
+  getDefaultAgent,
+  resolveNewSessionAgent,
   addCwdFavorite,
   removeCwdFavorite,
   expandHomePath,
@@ -27,6 +29,7 @@ import {
 } from './claude-sessions.js'
 import {
   readCodexMessagesFromRaw,
+  hasCompletedCodexTurn,
   locateCodexSession,
   readMessagesByCodexSessionId,
   scanAllCodexSessions,
@@ -174,6 +177,7 @@ function maskSecret(val: string | undefined): { preview: string; set: boolean } 
 }
 
 interface MaskedConfigView {
+  defaultAgent: AgentKind
   claudeCwd?: string
   claudeCmd?: string
   larkAppId?: string
@@ -183,6 +187,7 @@ interface MaskedConfigView {
 
 function maskConfigForView(cfg: UserConfigFile): MaskedConfigView {
   return {
+    defaultAgent: getDefaultAgent(),
     claudeCwd: cfg.claudeCwd,
     claudeCmd: cfg.claudeCmd,
     larkAppId: cfg.larkAppId,
@@ -476,8 +481,7 @@ export function startWebServer(opts: WebServerOptions): http.Server {
   // streams each settled INTERMEDIATE block — any assistant block that
   // already has a newer line after it, so it's complete and not the in-flight
   // final. The final block is left to turn-done, so streamed + final are
-  // disjoint and nothing is sent twice. claude only (codex's notify path is
-  // more fragile and out of scope).
+  // disjoint and nothing is sent twice.
   const STREAM_ENABLED = /^(1|true|yes|on)$/i.test(process.env.CLAWX_STREAM_REPLIES ?? '')
   const STREAM_POLL_MS = Math.max(200, Number(process.env.CLAWX_STREAM_POLL_MS) || 700)
   const STREAM_MAX_MS = Math.max(60_000, Number(process.env.CLAWX_STREAM_MAX_MS) || 1_800_000)
@@ -510,7 +514,7 @@ export function startWebServer(opts: WebServerOptions): http.Server {
   }
 
   function startReplyStreamer(entry: TmuxSessionEntry, sinceMs: number): void {
-    if (!STREAM_ENABLED || (entry.agentKind ?? 'claude') !== 'claude' || !opts.tmuxStreamBlock) return
+    if (!STREAM_ENABLED || !opts.tmuxStreamBlock) return
     const sessionId = entry.sessionId
     void stopReplyStreamer(sessionId) // a new turn supersedes the prior streamer
     // Reuse the session's streamed-set so a superseding streamer inherits what
@@ -545,8 +549,8 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         return
       }
       const located = locateAgentTranscript(
-        'claude',
-        entry.claudeUuid ?? entry.agentSessionId,
+        entry.agentKind ?? 'claude',
+        entry.agentSessionId ?? entry.claudeUuid,
         entry.transcriptPath,
       )
       if (!located?.jsonlPath) return
@@ -578,21 +582,21 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         const nl = raw.indexOf('\n')
         raw = nl >= 0 ? raw.slice(nl + 1) : ''
       }
-      // Candidate intermediate blocks: assistant, non-error, non-empty, past
-      // the turn boundary. HOLD BACK the most recent assistant block — it's the
-      // current/eventual final answer that turn-done sends — so streamed and
-      // final stay disjoint BY CONSTRUCTION (not just via uuid exclusion), even
-      // when tool-result lines trail the final block.
-      const candidates = readClaudeMessagesFromRaw(raw).filter(
+      const kind = entry.agentKind ?? 'claude'
+      const candidates = (kind === 'codex'
+        ? readCodexMessagesFromRaw(raw).messages
+        : readClaudeMessagesFromRaw(raw)).filter(
         (m) =>
           m.role === 'assistant' &&
           !m.isError &&
           m.text.trim() !== '' &&
           (Date.parse(m.timestamp) || 0) > sinceMs,
       )
-      for (let i = 0; i < candidates.length - 1; i++) {
+      const intermediate = kind === 'codex'
+        ? candidates.filter((m, i) => m.phase === 'commentary' || (!m.phase && i < candidates.length - 1))
+        : candidates.slice(0, -1)
+      for (const m of intermediate) {
         if (!active || !isCurrent()) return
-        const m = candidates[i]!
         if (sent.has(m.uuid)) continue
         sent.add(m.uuid)
         // One line per streamed block. A repeated uuid here = two streamers
@@ -657,6 +661,13 @@ export function startWebServer(opts: WebServerOptions): http.Server {
 
       if (req.method === 'POST' && url.pathname === '/api/config') {
         const incoming = (await readJsonBody(req)) as Partial<UserConfigFile>
+        if (incoming && Object.hasOwn(incoming, 'defaultAgent')) {
+          if (typeof incoming.defaultAgent !== 'string' || !incoming.defaultAgent.trim() || !normalizeAgentKind(incoming.defaultAgent)) {
+            sendJson(res, 400, { error: 'defaultAgent must be claude or codex' })
+            return
+          }
+          incoming.defaultAgent = normalizeAgentKind(incoming.defaultAgent)!
+        }
         const existing = loadUserConfigFile()
         // Merge: any field present in `incoming` overwrites; absent fields preserve
         // the existing value. This is how "leave secret blank to keep" works.
@@ -689,9 +700,17 @@ export function startWebServer(opts: WebServerOptions): http.Server {
             scheduleByUuid.set(r.claudeUuid, r.scheduleName)
           }
         }
+        const tmuxByUuid = new Map(
+          [...tmuxSessionStore.archivedEntries(), ...tmuxSessionStore.entries()]
+            .filter((e) => (e.agentKind ?? 'claude') === 'claude')
+            .map((e) => [e.agentSessionId ?? e.claudeUuid, e]),
+        )
         const all = scanAllClaudeSessions().map((m) => ({
           ...m,
-          inBot: botUuids.has(m.uuid),
+          label: tmuxByUuid.get(m.uuid)?.label,
+          inBot: botUuids.has(m.uuid) || tmuxSessionStore.entries().some(
+            (e) => (e.agentKind ?? 'claude') === 'claude' && (e.agentSessionId ?? e.claudeUuid) === m.uuid,
+          ),
           scheduleName: scheduleByUuid.get(m.uuid),
         }))
         sendJson(res, 200, { sessions: all, root: claudeProjectsRoot() })
@@ -703,7 +722,16 @@ export function startWebServer(opts: WebServerOptions): http.Server {
       // Codex metadata is leaner (no bot/schedule/chat cross-ref), so
       // this just returns the raw scan + root.
       if (req.method === 'GET' && url.pathname === '/api/codex-sessions/all') {
-        sendJson(res, 200, { sessions: scanAllCodexSessions(), root: codexSessionsRoot() })
+        const trackedById = new Map(
+          [...tmuxSessionStore.archivedEntries(), ...tmuxSessionStore.entries()]
+            .filter((e) => e.agentKind === 'codex' && e.agentSessionId)
+            .map((e) => [e.agentSessionId, e]),
+        )
+        const sessions = scanAllCodexSessions().map((s) => ({
+          ...s,
+          label: trackedById.get(s.id)?.label,
+        }))
+        sendJson(res, 200, { sessions, root: codexSessionsRoot() })
         return
       }
 
@@ -965,7 +993,7 @@ export function startWebServer(opts: WebServerOptions): http.Server {
           typeof body?.resumeUuid === 'string' && body.resumeUuid.trim()
             ? body.resumeUuid.trim()
             : undefined
-        const agentKind = normalizeAgentKind(body?.agent)
+        const agentKind = resolveNewSessionAgent(body?.agent)
         if (!agentKind) {
           sendJson(res, 400, { ok: false, error: 'agent must be claude or codex' })
           return
@@ -1402,7 +1430,6 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         // per-session streamed-set now the turn is over — the next turn starts
         // fresh (the reference we captured stays valid for the gather below).
         const streamedUuids = await stopReplyStreamer(entry.sessionId)
-        streamedBySession.delete(entry.sessionId)
         if (args.transcriptPath && entry.transcriptPath !== args.transcriptPath) {
           entry = tmuxSessionStore.patch(entry.sessionId, { transcriptPath: args.transcriptPath })
         }
@@ -1412,21 +1439,23 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         let userText: string | null = null
         let messageCount = 0
         let turnEndedInError = false
+        let codexComplete = false
+        let pendingCommentary: UiMessage[] = []
         if (located?.jsonlPath && fs.existsSync(located.jsonlPath)) {
           try {
             for (let attempt = 0; attempt < 16; attempt++) {
               let raw = ''
               try { raw = fs.readFileSync(located.jsonlPath, 'utf8') } catch { break }
-              let codexCompleted: Set<string> | null = null
               let messages: UiMessage[]
               if (args.agentKind === 'codex') {
                 const parsed = readCodexMessagesFromRaw(raw)
                 messages = parsed.messages
-                codexCompleted = parsed.completedTurnIds
+                codexComplete = hasCompletedCodexTurn(parsed, sinceMs)
               } else {
                 messages = readClaudeMessagesFromRaw(raw)
               }
               messageCount = messages.length
+              pendingCommentary = []
               const turnAssistant: UiMessage[] = []
               const turnUser: string[] = []
               let lastRawAssistant: UiMessage | undefined
@@ -1439,7 +1468,13 @@ export function startWebServer(opts: WebServerOptions): http.Server {
                   // disk (turnComplete). turnAssistant is what we still need to
                   // SEND (excludes blocks already streamed).
                   lastRawAssistant = m
-                  if (!streamedUuids.has(m.uuid)) turnAssistant.push(m)
+                  if (!streamedUuids.has(m.uuid)) {
+                    if (args.agentKind === 'codex' && m.phase === 'commentary' && STREAM_ENABLED && opts.tmuxStreamBlock) {
+                      pendingCommentary.push(m)
+                    } else {
+                      turnAssistant.push(m)
+                    }
+                  }
                 } else if (m.role === 'user' && m.text.trim()) turnUser.push(m.text)
               }
               const last = turnAssistant[turnAssistant.length - 1]
@@ -1459,11 +1494,6 @@ export function startWebServer(opts: WebServerOptions): http.Server {
                       .filter(Boolean)
                       .join('\n\n')
               userText = turnUser.length > 0 ? turnUser[0]! : null
-              // Codex: a turn is complete only once the transcript has a
-              // task_complete event (codexCompleted), not merely a reply
-              // block — this waits out the ~1s gap between the final
-              // message and its task_complete marker, so we don't fan out
-              // (or stop retrying) before the turn truly ended.
               // Completion is decided on the RAW newest block (ignoring
               // streaming): the turn is done once its final assistant block is
               // on disk with a terminal stop_reason — even if that block was
@@ -1475,11 +1505,11 @@ export function startWebServer(opts: WebServerOptions): http.Server {
                 lastRawAssistant !== undefined &&
                 (lastRawAssistant.isError ||
                   (args.agentKind === 'codex'
-                    ? (codexCompleted?.size ?? 0) > 0
+                    ? codexComplete
                     : lastRawAssistant.stopReason === 'end_turn' ||
                       lastRawAssistant.stopReason === 'stop_sequence' ||
                       lastRawAssistant.stopReason === 'max_tokens'))
-              if (turnComplete) break
+              if (turnComplete || (args.agentKind === 'codex' && !lastRawAssistant && !userText)) break
               if (attempt === 15) break
               await new Promise((r) => setTimeout(r, 500))
             }
@@ -1487,6 +1517,19 @@ export function startWebServer(opts: WebServerOptions): http.Server {
             log.warn('turn-done: jsonl parse failed', { transcriptPath: located.jsonlPath, agentKind: args.agentKind, err: err?.message ?? String(err) })
           }
         }
+        if (args.agentKind === 'codex' && !codexComplete && !turnEndedInError) {
+          if (assistantText || userText || pendingCommentary.length > 0) startReplyStreamer(entry, sinceMs)
+          return { status: 200, body: { ok: true, held: true } }
+        }
+        for (const m of pendingCommentary) {
+          streamedUuids.add(m.uuid)
+          try {
+            await opts.tmuxStreamBlock!({ entry, text: m.text.trim() })
+          } catch (err: any) {
+            log.warn('reply-stream: post failed', { sessionId: entry.sessionId, err: err?.message ?? String(err) })
+          }
+        }
+        streamedBySession.delete(entry.sessionId)
         const synthetic = !turnEndedInError && isSyntheticTurn(userText, assistantText)
         if (!assistantText?.trim() && !!userText?.trim() && !synthetic && !turnEndedInError && !args.recovered) {
           return { status: 200, body: { ok: true, held: true } }

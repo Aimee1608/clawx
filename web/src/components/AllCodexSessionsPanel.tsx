@@ -60,7 +60,7 @@ export function AllCodexSessionsPanel({
     return sessions.filter((s) => {
       if (cutoff > 0 && Date.parse(s.lastModified) < cutoff) return false
       if (q) {
-        const haystack = [s.id, s.cwd]
+        const haystack = [s.id, s.cwd, s.label]
           .filter((v): v is string => typeof v === 'string')
           .join(' ')
           .toLowerCase()

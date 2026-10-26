@@ -145,3 +145,11 @@ xclaw room attach <rid>         # 重新进入某房间的 tmux
 ## 许可
 
 [MIT](./LICENSE)
+
+### 默认 solo agent
+
+在 `~/.config/clawx/config.json` 中设置 `"defaultAgent": "codex"` 或 `"defaultAgent": "claude"`。
+CLI `xclaw solo` / `xclaw tmux`、飞书 `/new-solo` 和 Web 新建 solo 会话共用该默认值。
+优先级：显式 `--agent` / API `agent` > 环境变量 `CLAWX_DEFAULT_AGENT` > `defaultAgent` > `claude`。
+Web 的 Configuration 中也可选择默认 agent；保存后对新建会话生效。
+已有会话不改变后端，`room` 仍使用 Claude Agent Teams。

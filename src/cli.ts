@@ -30,7 +30,8 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { ensureProxyEnv } from './proxy-env.js'
-import { normalizeAgentKind, isValidEffort, EFFORT_LEVELS } from './agent-backend.js'
+import { resolveNewSessionAgent } from './config.js'
+import { isValidEffort, EFFORT_LEVELS } from './agent-backend.js'
 
 export interface CliOverrides {
   claudeCwd?: string
@@ -87,7 +88,7 @@ function printUsage(): void {
       '  xclaw tmux [cwd] --group <name>     Create the thread in a named group',
       '                                          (config tmuxThreadChats); omit for default.',
       '  xclaw tmux --agent codex [cwd]      Create a tmux+Codex session. Omit',
-      '                                          --agent to keep the default Claude behavior.',
+      '                                          --agent to use config defaultAgent (fallback: Claude).',
       '  xclaw solo [cwd] --effort <level>   Set claude reasoning depth for this',
       '                                          session: low|medium|high|xhigh|max|ultracode',
       '                                          (claude only; codex ignores it).',
@@ -255,7 +256,7 @@ async function main(): Promise<void> {
       const resumeUuid = typeof values.resume === 'string' ? values.resume : undefined
       const label = typeof values.label === 'string' ? values.label : undefined
       const group = typeof values.group === 'string' ? values.group : undefined
-      const agent = normalizeAgentKind(values.agent)
+      const agent = resolveNewSessionAgent(values.agent)
       if (!agent) {
         process.stderr.write('Unknown --agent. Use `claude` or `codex`.\n')
         process.exit(2)
