@@ -184,6 +184,7 @@ export function readCodexMessagesFromRaw(raw: string): {
   const seen = new Set<string>()
   const completedTurnIds = new Set<string>()
   let lastCompletedAt = 0
+  let model: string | undefined
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue
     let rec: any
@@ -192,9 +193,16 @@ export function readCodexMessagesFromRaw(raw: string): {
     } catch {
       continue
     }
+    if (rec.type === 'turn_context') {
+      model = typeof rec.payload?.model === 'string' ? rec.payload.model.trim() || undefined : undefined
+      continue
+    }
     if (rec.type === 'event_msg' && rec.payload?.type) {
       const typ = String(rec.payload.type)
-      if (typ === 'task_started' || typ === 'turn_started') lastCompletedAt = 0
+      if (typ === 'task_started' || typ === 'turn_started') {
+        lastCompletedAt = 0
+        model = undefined
+      }
       if (/task_(complete|completed|stopped|finished)|turn_(complete|completed|stopped|finished)/i.test(typ)) {
         const turnId = typeof rec.payload.turn_id === 'string' ? rec.payload.turn_id : 'unknown'
         completedTurnIds.add(turnId)
@@ -206,7 +214,7 @@ export function readCodexMessagesFromRaw(raw: string): {
           if (!seen.has(uuid)) {
             seen.add(uuid)
             out.push({ role: 'assistant', text: errorText.trim(),
-              timestamp: String(rec.timestamp ?? ''), uuid, isError: true, stopReason: 'end_turn' })
+              timestamp: String(rec.timestamp ?? ''), uuid, isError: true, stopReason: 'end_turn', model })
           }
         }
       }
@@ -227,6 +235,7 @@ export function readCodexMessagesFromRaw(raw: string): {
       uuid,
       stopReason: p.role === 'assistant' && p.phase !== 'commentary' ? 'end_turn' : undefined,
       phase: typeof p.phase === 'string' ? p.phase : undefined,
+      model: p.role === 'assistant' ? (typeof p.model === 'string' ? p.model.trim() || undefined : model) : undefined,
     })
   }
   return { messages: out, completedTurnIds, lastCompletedAt }

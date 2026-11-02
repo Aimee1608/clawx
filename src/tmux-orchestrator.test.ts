@@ -39,7 +39,7 @@ function fakeMgr(aliveByAttempt: boolean[]) {
     async sendKeys() {},
     async sendKey() {},
     async capturePane() {
-      return ''
+      return '› Ask Codex to do anything\n GPT-6-Astra high · /tmp'
     },
     async listSessions() {
       return []
@@ -55,7 +55,7 @@ function makeOrch(aliveByAttempt: boolean[]) {
   const { mgr, calls } = fakeMgr(aliveByAttempt)
   // codex: create() 跳过 claude 专属的 acceptStartupDialogs 30s 轮询
   const orch = createTmuxOrchestrator({ store, mgr })
-  return { orch, store, calls }
+  return { orch, store, calls, mgr }
 }
 
 const createCodex = (orch: any) =>
@@ -66,14 +66,14 @@ describe('create() 存活校验', () => {
     vi.stubEnv('CLAWX_DEFAULT_AGENT', 'codex')
     const { orch } = makeOrch([true])
     const pending = orch.create({ sessionId: 'sid-1', cwd: '/tmp' })
-    await vi.advanceTimersByTimeAsync(5_000)
+    await vi.advanceTimersByTimeAsync(12_000)
     expect((await pending).agentKind).toBe('codex')
   })
 
   it('进程稳住时一次就成功,不重试', async () => {
     const { orch, store, calls } = makeOrch([true])
     const p = createCodex(orch)
-    await vi.advanceTimersByTimeAsync(5_000)
+    await vi.advanceTimersByTimeAsync(12_000)
     const entry = await p
     expect(entry.sessionId).toBe('sid-1')
     expect(calls.newSession).toBe(1)
@@ -88,6 +88,44 @@ describe('create() 存活校验', () => {
     expect(calls.newSession).toBe(2)
     expect(calls.killSession).toBeGreaterThanOrEqual(1)
     expect(store.get('sid-1')).toBeTruthy()
+  })
+
+  it('releases a ready interface after two stable seconds without a fixed ten-second wait', async () => {
+    const { orch } = makeOrch([true])
+    let ready = false
+    const pending = createCodex(orch).then((entry: unknown) => { ready = true; return entry })
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(ready).toBe(false)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(ready).toBe(true)
+    await pending
+  })
+
+  it('catches a process that dies after the old two-second check', async () => {
+    const { orch, store, calls, mgr } = makeOrch([true, true])
+    const started = Date.now()
+    mgr.hasSession = async () => calls.newSession > 1 || Date.now() - started < 5500
+    mgr.capturePane = async () => calls.newSession > 1 ? '› Ask Codex\nGPT-6-Astra high · /tmp' : '› Ask Codex'
+    const pending = createCodex(orch)
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect((await pending).sessionId).toBe('sid-1')
+    expect(calls.newSession).toBe(2)
+    expect(store.get('sid-1')).toBeDefined()
+  })
+
+  it('does not call a loading banner ready and keeps diagnostics after the last failure', async () => {
+    const { orch, store, calls, mgr } = makeOrch([true, true])
+    mgr.capturePane = async () => '› Ask Codex to do anything'
+    const messages: string[] = []
+    const pending = orch.create({ sessionId: 'sid-1', cwd: '/tmp', agentKind: 'codex', onProgress: (message) => messages.push(message) }).catch((e: Error) => e)
+    await vi.advanceTimersByTimeAsync(130_000)
+    expect(messages.some((m) => m.includes('第 1/2 次'))).toBe(true)
+    expect(messages.some((m) => m.includes('第 2/2 次'))).toBe(true)
+    expect(messages.some((m) => m.includes('已等待 5 秒'))).toBe(true)
+    expect((await pending).message).toMatch(/60 秒内未就绪/)
+    expect(calls.newSession).toBe(2)
+    expect(calls.killSession).toBe(1)
+    expect(store.get('sid-1')).toBeUndefined()
   })
 
   it('两次都启动即退出时抛错,且不留下 store 记录', async () => {

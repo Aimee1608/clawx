@@ -79,3 +79,15 @@ it('does not recover an old failure while a new task has started', () => {
   ].join('\n')
   expect(hasCompletedCodexTurn(readCodexMessagesFromRaw(raw), 0)).toBe(false)
 })
+
+it('attributes each reply to its own turn model across switches and missing metadata', () => {
+  const context = (model: string) => JSON.stringify({ type: 'turn_context', payload: { model } })
+  const start = JSON.stringify({ type: 'event_msg', payload: { type: 'task_started' } })
+  const parsed = readCodexMessagesFromRaw([
+    start, context('gpt-6-luna'), message('2026-11-02T01:00:00Z', 'final_answer'),
+    start, context('gpt-6.1-sol'), message('2026-11-02T01:01:00Z', 'final_answer'),
+    start, message('2026-11-02T01:02:00Z', 'final_answer'),
+    context('gpt-6-astra'),
+  ].join('\n'))
+  expect(parsed.messages.map((m) => m.model)).toEqual(['gpt-6-luna', 'gpt-6.1-sol', undefined])
+})

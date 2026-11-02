@@ -43,3 +43,23 @@ describe('tmux bracketed paste delivery', () => {
     }
   }, 15000)
 })
+
+it('retains stderr from an exited agent and reports the process as dead', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'clawx-exit-test-'))
+  const socket = `clawx-exit-${randomUUID()}`
+  const wrapper = path.join(directory, 'tmux')
+  fs.writeFileSync(wrapper, `#!/bin/sh\nexec tmux -L '${socket}' "$@"\n`, { mode: 0o700 })
+  const mgr = createTmuxMgr({ tmuxCmd: wrapper })
+  try {
+    await mgr.newSession({ name: 'failed', cwd: directory, retainOnExit: true,
+      cmd: "sleep 0.1; printf 'Error: model catalog request timed out\\n' >&2; exit 7" })
+    await vi.waitFor(async () => expect(await mgr.hasSession('failed')).toBe(false))
+    expect(await mgr.capturePane({ name: 'failed' })).toContain('model catalog request timed out')
+    expect(execFileSync(wrapper, ['display-message', '-p', '-t', 'failed', '#{pane_dead_status}'], { encoding: 'utf8' }).trim()).toBe('7')
+    await mgr.setSessionOption({ name: 'failed', option: 'remain-on-exit', value: 'failed' })
+    expect(execFileSync(wrapper, ['show-options', '-w', '-t', 'failed', 'remain-on-exit'], { encoding: 'utf8' })).toContain('failed')
+  } finally {
+    execFileSync('tmux', ['-L', socket, 'kill-server'])
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
+})

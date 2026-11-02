@@ -133,3 +133,13 @@ it('keeps distinct Codex histories when one tmux session is recreated', () => {
   const restored = new TmuxSessionStore({ persistPath: tmpFile })
   expect(restored.archivedEntries().map(e => e.agentSessionId)).toEqual(['codex-first', 'codex-second'])
 })
+
+it('rejects duplicate agent ownership without changing either index', () => {
+  const store = new TmuxSessionStore({ persistPath: tmpFile })
+  store.upsert(mk('first', { agentKind: 'codex', agentSessionId: 'cx' }))
+  store.upsert(mk('second', { agentKind: 'codex' }))
+  expect(() => store.patch('second', { agentSessionId: 'cx' })).toThrow(/already belongs/)
+  expect(() => store.upsert(mk('third', { agentKind: 'codex', agentSessionId: 'cx' }))).toThrow(/already belongs/)
+  expect(store.getByAgentSession('codex', 'cx')?.sessionId).toBe('first')
+  expect(store.get('second')?.agentSessionId).toBeUndefined()
+})

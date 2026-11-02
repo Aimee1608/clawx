@@ -35,6 +35,7 @@ export interface UiMessage {
    * file read. */
   stopReason?: string
   phase?: string
+  model?: string
 }
 
 /**
@@ -126,6 +127,7 @@ export function readClaudeMessagesFromRaw(raw: string): UiMessage[] {
       }
     } else if (rec.type === 'assistant' && rec.message?.role === 'assistant') {
       const text = extractText(rec.message.content)
+      const model = typeof rec.message.model === 'string' ? rec.message.model.trim() : ''
       if (text.trim()) {
         out.push({
           role: 'assistant',
@@ -134,6 +136,7 @@ export function readClaudeMessagesFromRaw(raw: string): UiMessage[] {
           uuid,
           isError: rec.isApiErrorMessage === true || rec.error === 'authentication_failed',
           stopReason: typeof rec.message.stop_reason === 'string' ? rec.message.stop_reason : undefined,
+          model: model && !model.startsWith('<') ? model : undefined,
         })
         if (uuid) seen.add(uuid)
       }

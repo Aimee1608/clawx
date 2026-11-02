@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 
 // pm2 is a CJS module; import default and cast to `any` to cross the
 // gap between its shipped .d.ts and how we actually call the API. We
@@ -31,6 +31,7 @@ interface Pm2Proc {
     pm_uptime?: number
     pm_out_log_path?: string
     pm_err_log_path?: string
+    pm_exec_path?: string
   }
   monit?: { cpu?: number; memory?: number }
 }
@@ -97,8 +98,18 @@ function buildStartArgs(overrides: CliOverrides): string[] {
 }
 
 function cleanPm2Env(): Record<string, string> {
+  const internal = new Set([
+    'name', 'script', 'args', 'env', 'exec_mode', 'exec_interpreter', 'node_args',
+    'status', 'created_at', 'windowsHide', 'username', 'merge_logs', 'kill_retry_time',
+    'prev_restart_delay', 'instance_var', 'unstable_restarts', 'restart_time',
+    'command', 'watch', 'filter_env', 'versioning', 'vizion_runing', 'vizion_running',
+    'MODULE_DEBUG', 'pmx', 'instances', 'automation', 'autostart', 'autorestart',
+    'stop_exit_codes', 'unstable_restart', 'treekill', 'exit_code', 'vizion',
+    'NODE_APP_INSTANCE', 'NODE_UNIQUE_ID',
+  ])
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) {
+    if (/^(pm_|pm2_|axm_)/.test(k) || internal.has(k)) continue
     if (typeof v === 'string') env[k] = v
   }
   // VS Code / code-server shells can carry a literal `io=undefined`;
@@ -147,6 +158,11 @@ export async function daemonStart(opts: { overrides: CliOverrides }): Promise<vo
       error: path.join(process.env.HOME ?? '', '.pm2', 'logs', `${PROC_NAME}-error.log`),
     })
     const first = procs[0]
+    const actualScript = first?.pm2_env?.pm_exec_path
+    if (!actualScript || realpathSync(actualScript) !== realpathSync(script)) {
+      await pStop(PROC_NAME).catch(() => {})
+      throw new Error(`daemon script mismatch: expected ${script}, got ${actualScript ?? '(unknown)'}`)
+    }
     process.stdout.write(
       `✓ xclaw daemon started (pid=${first?.pid ?? '?'}, pm_id=${first?.pm_id ?? '?'}).\n` +
         `  Web UI: http://127.0.0.1:8124\n` +

@@ -47,6 +47,7 @@ export interface TmuxMgr {
     cwd: string
     cmd: string
     env?: Record<string, string>
+    retainOnExit?: boolean
   }): Promise<void>
   /**
    * Type `text` into the session's active pane, optionally followed by
@@ -132,13 +133,14 @@ export function createTmuxMgr(opts: TmuxMgrOptions = {}): TmuxMgr {
       assertSafeName(name)
       try {
         await execFileAsync(tmux, ['has-session', '-t', name])
-        return true
+        const { stdout } = await run(['display-message', '-p', '-t', name, '#{pane_dead}'])
+        return stdout.trim() !== '1'
       } catch {
         return false
       }
     },
 
-    async newSession({ name, cwd, cmd, env }) {
+    async newSession({ name, cwd, cmd, env, retainOnExit }) {
       assertSafeName(name)
       // -d detach immediately; -x/-y so capture-pane has a sane geometry
       // even without an attached client.
@@ -167,6 +169,7 @@ export function createTmuxMgr(opts: TmuxMgrOptions = {}): TmuxMgr {
         '50',
         ...envArgs,
         cmd,
+        ...(retainOnExit ? [';', 'set-option', '-w', '-t', name, 'remain-on-exit', 'on'] : []),
       ])
     },
 
@@ -276,7 +279,7 @@ export function createTmuxMgr(opts: TmuxMgrOptions = {}): TmuxMgr {
       // settable at session level — best effort. Value is passed as a
       // single argv element to execFileAsync, so embedded special
       // characters need no extra escaping (no shell involved).
-      await run(['set-option', '-t', name, '-q', option, value])
+      await run(['set-option', ...(option === 'remain-on-exit' ? ['-w'] : []), '-t', name, '-q', option, value])
     },
 
     async renameWindow({ name, index, title }) {

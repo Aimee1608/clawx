@@ -121,6 +121,7 @@ export interface WebServerOptions {
     userText: string | null
     userSource: SendSource
     messageCount: number
+    model?: string
   }) => Promise<void> | void
   /** Streams a single INTERMEDIATE assistant block to the thread mid-turn
    * (opt-in via CLAWX_STREAM_REPLIES). Called per settled non-final block as
@@ -970,6 +971,7 @@ export function startWebServer(opts: WebServerOptions): http.Server {
       if (req.method === 'POST' && url.pathname === '/api/tmux-sessions') {
         const body = (await readJsonBody(req)) as {
           sessionId?: unknown
+          progress?: unknown
           cwd?: unknown
           label?: unknown
           withThread?: unknown
@@ -1050,6 +1052,16 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         const canThread = !!opts.larkThread && !!threadChatId
         const withThread =
           typeof body?.withThread === 'boolean' ? body.withThread : canThread
+        const streaming = body?.progress === true
+        const progress = streaming ? (message: string) => {
+          if (res.destroyed) return
+          if (!res.headersSent) res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-cache' })
+          res.write(JSON.stringify({ type: 'progress', message }) + '\n')
+        } : undefined
+        const finish = (status: number, result: unknown) => {
+          if (streaming && res.headersSent) res.end(JSON.stringify({ type: 'result', result }) + '\n')
+          else sendJson(res, status, result)
+        }
         try {
           let entry = await tmuxOrchestrator.create({
             sessionId,
@@ -1058,7 +1070,9 @@ export function startWebServer(opts: WebServerOptions): http.Server {
             resumeUuid,
             agentKind,
             effort,
+            onProgress: progress,
           })
+          progress?.(withThread && canThread ? `${agentKind} 已就绪，正在关联飞书话题` : `${agentKind} 已就绪`)
           // create() may have re-bound this (resumed) session to a prior
           // session's Lark thread — when the resumed claude uuid already
           // owned one. In that case DON'T mint a new thread: announce the
@@ -1116,9 +1130,9 @@ export function startWebServer(opts: WebServerOptions): http.Server {
               })
             }
           }
-          sendJson(res, 200, { ok: true, entry })
+          finish(200, { ok: true, entry })
         } catch (err: any) {
-          sendJson(res, 500, { ok: false, error: err?.message ?? String(err) })
+          finish(500, { ok: false, error: err?.message ?? String(err) })
         }
         return
       }
@@ -1312,36 +1326,40 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         return
       }
 
+      function resolveAgentHookEntry(args: {
+        agentKind: AgentKind
+        agentSessionId: string
+        clawxSessionId?: string
+        transcriptPath?: string
+      }): TmuxSessionEntry | undefined {
+        const owner = tmuxSessionStore.getByAgentSession(args.agentKind, args.agentSessionId)
+        if (!args.clawxSessionId) return owner
+        const entry = tmuxSessionStore.get(args.clawxSessionId)
+        if (!entry || entry.agentKind !== args.agentKind) return undefined
+        if (owner && owner.sessionId !== entry.sessionId) return undefined
+        if (entry.agentSessionId && entry.agentSessionId !== args.agentSessionId) return undefined
+        return tmuxSessionStore.patch(entry.sessionId, {
+          agentSessionId: args.agentSessionId,
+          transcriptPath: args.transcriptPath ?? entry.transcriptPath,
+          agentSessionPending: false,
+        })
+      }
+
       async function handleAgentTurnStart(args: {
         agentKind: AgentKind
         agentSessionId: string
+        clawxSessionId?: string
         prompt: string
         transcriptPath?: string
       }): Promise<{ status: number; body: unknown }> {
         const trimmed = args.prompt.trim()
-        let entry = tmuxSessionStore.getByAgentSession(args.agentKind, args.agentSessionId)
+        let entry = resolveAgentHookEntry(args)
         if (!entry) {
-          if (args.agentKind === 'codex') {
-            const cwd = locateCodexSession(args.agentSessionId)?.cwd
-            const pending = tmuxSessionStore
-              .entries()
-              .filter((e) => e.agentKind === 'codex' && !e.agentSessionId)
-              .find((e) => !cwd || e.cwd === cwd)
-            if (pending) {
-              entry = tmuxSessionStore.patch(pending.sessionId, {
-                agentSessionId: args.agentSessionId,
-                transcriptPath: args.transcriptPath,
-                agentSessionPending: false,
-              })
-            }
-          }
-          if (!entry) {
-            log.debug('turn-start unmatched — delivery watchdog left armed', {
-              agentKind: args.agentKind,
-              agentSessionId: args.agentSessionId,
-            })
-            return { status: 200, body: { ok: true, matched: false } }
-          }
+          log.debug('turn-start unmatched — delivery watchdog left armed', {
+            agentKind: args.agentKind,
+            agentSessionId: args.agentSessionId,
+          })
+          return { status: 200, body: { ok: true, matched: false } }
         } else if (args.transcriptPath && entry.transcriptPath !== args.transcriptPath) {
           entry = tmuxSessionStore.patch(entry.sessionId, { transcriptPath: args.transcriptPath })
         }
@@ -1389,6 +1407,7 @@ export function startWebServer(opts: WebServerOptions): http.Server {
       function handleAgentTurnDone(args: {
         agentKind: AgentKind
         agentSessionId: string
+        clawxSessionId?: string
         transcriptPath?: string
         recovered?: boolean
       }): Promise<{ status: number; body: unknown }> {
@@ -1402,23 +1421,11 @@ export function startWebServer(opts: WebServerOptions): http.Server {
       async function handleAgentTurnDoneInner(args: {
         agentKind: AgentKind
         agentSessionId: string
+        clawxSessionId?: string
         transcriptPath?: string
         recovered?: boolean
       }): Promise<{ status: number; body: unknown }> {
-        let entry = tmuxSessionStore.getByAgentSession(args.agentKind, args.agentSessionId)
-        if (!entry && args.agentKind === 'codex') {
-          const pending = tmuxSessionStore
-            .entries()
-            .filter((e) => e.agentKind === 'codex' && !e.agentSessionId)
-            .find((e) => !args.transcriptPath || e.transcriptPath === args.transcriptPath)
-          if (pending) {
-            entry = tmuxSessionStore.patch(pending.sessionId, {
-              agentSessionId: args.agentSessionId,
-              transcriptPath: args.transcriptPath,
-              agentSessionPending: false,
-            })
-          }
-        }
+        let entry = resolveAgentHookEntry(args)
         if (!entry) return { status: 200, body: { ok: true, matched: false } }
         // A finished turn proves the send landed — clear the delivery watchdog
         // even if turn-start never reached us, else it warns "可能未送达" about
@@ -1436,6 +1443,7 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         const sinceMs = (entry.lastTurnAt ? Date.parse(entry.lastTurnAt) : 0) || Date.parse(entry.createdAt) || 0
         const located = locateAgentTranscript(args.agentKind, args.agentSessionId, args.transcriptPath || entry.transcriptPath)
         let assistantText: string | null = null
+        let model: string | undefined
         let userText: string | null = null
         let messageCount = 0
         let turnEndedInError = false
@@ -1477,6 +1485,7 @@ export function startWebServer(opts: WebServerOptions): http.Server {
                   }
                 } else if (m.role === 'user' && m.text.trim()) turnUser.push(m.text)
               }
+              model = lastRawAssistant?.model
               const last = turnAssistant[turnAssistant.length - 1]
               const lastIsError = !!last?.isError
               turnEndedInError = lastIsError
@@ -1549,7 +1558,7 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         const userSource: SendSource = userText ? tmuxOrchestrator.identifySendSource(entry.sessionId, userText) ?? 'terminal' : 'terminal'
         log.info('tmux turn done', { sessionId: updated.sessionId, agentKind: args.agentKind, agentSessionId: args.agentSessionId, messageCount, assistantChars: assistantText?.length ?? 0, userSource, synthetic })
         if (opts.tmuxFanout && !synthetic) {
-          await opts.tmuxFanout({ entry: updated, assistantText, userText, userSource, messageCount })
+          await opts.tmuxFanout({ entry: updated, assistantText, userText, userSource, messageCount, model })
         }
         return { status: 200, body: { ok: true, matched: true, sessionId: updated.sessionId, assistantChars: assistantText?.length ?? 0 } }
       }
@@ -1591,15 +1600,16 @@ export function startWebServer(opts: WebServerOptions): http.Server {
       }
 
       if (req.method === 'POST' && url.pathname === '/api/internal/agent-turn-start') {
-        const body = (await readJsonBody(req)) as { agentKind?: unknown; agentSessionId?: unknown; transcriptPath?: unknown; prompt?: unknown } | null
+        const body = (await readJsonBody(req)) as { agentKind?: unknown; agentSessionId?: unknown; clawxSessionId?: unknown; transcriptPath?: unknown; prompt?: unknown } | null
         const agentKind = normalizeAgentKind(body?.agentKind)
         const agentSessionId = typeof body?.agentSessionId === 'string' ? body.agentSessionId : ''
+        const clawxSessionId = typeof body?.clawxSessionId === 'string' ? body.clawxSessionId : undefined
         const transcriptPath = typeof body?.transcriptPath === 'string' ? body.transcriptPath : undefined
         const prompt = typeof body?.prompt === 'string' ? body.prompt : ''
         if (!agentKind) { sendJson(res, 400, { ok: false, error: 'agentKind must be claude or codex' }); return }
         if (!agentSessionId) { sendJson(res, 400, { ok: false, error: 'agentSessionId required' }); return }
         sendJson(res, 200, { ok: true, queued: true })
-        void handleAgentTurnStart({ agentKind, agentSessionId, transcriptPath, prompt }).catch(
+        void handleAgentTurnStart({ agentKind, agentSessionId, clawxSessionId, transcriptPath, prompt }).catch(
           (err: any) => log.warn('agent-turn-start bg failed', { err: err?.message ?? String(err) }),
         )
         return
@@ -1620,14 +1630,15 @@ export function startWebServer(opts: WebServerOptions): http.Server {
       }
 
       if (req.method === 'POST' && url.pathname === '/api/internal/agent-turn-done') {
-        const body = (await readJsonBody(req)) as { agentKind?: unknown; agentSessionId?: unknown; transcriptPath?: unknown; recovered?: unknown } | null
+        const body = (await readJsonBody(req)) as { agentKind?: unknown; agentSessionId?: unknown; clawxSessionId?: unknown; transcriptPath?: unknown; recovered?: unknown } | null
         const agentKind = normalizeAgentKind(body?.agentKind)
         const agentSessionId = typeof body?.agentSessionId === 'string' ? body.agentSessionId : ''
+        const clawxSessionId = typeof body?.clawxSessionId === 'string' ? body.clawxSessionId : undefined
         const transcriptPath = typeof body?.transcriptPath === 'string' ? body.transcriptPath : undefined
         if (!agentKind) { sendJson(res, 400, { ok: false, error: 'agentKind must be claude or codex' }); return }
         if (!agentSessionId) { sendJson(res, 400, { ok: false, error: 'agentSessionId required' }); return }
         sendJson(res, 200, { ok: true, queued: true })
-        void handleAgentTurnDone({ agentKind, agentSessionId, transcriptPath, recovered: body?.recovered === true }).catch(
+        void handleAgentTurnDone({ agentKind, agentSessionId, clawxSessionId, transcriptPath, recovered: body?.recovered === true }).catch(
           (err: any) => log.warn('agent-turn-done bg failed', { err: err?.message ?? String(err) }),
         )
         return

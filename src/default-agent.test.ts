@@ -79,3 +79,44 @@ describe('default agent configuration', () => {
     }
   })
 })
+
+it('streams startup progress before returning the created session', async () => {
+  const store = new TmuxSessionStore({ persistPath: path.join(directory, 'stream.json') })
+  let finishCreate!: () => void
+  const gate = new Promise<void>((resolve) => { finishCreate = resolve })
+  const orchestrator = { create: async (opts: CreateOptions) => {
+    opts.onProgress?.('正在启动 codex，第 1/2 次')
+    await gate
+    return store.upsert({ sessionId: opts.sessionId, tmuxName: opts.sessionId,
+      cwd: opts.cwd, agentKind: 'codex', createdAt: new Date().toISOString() })
+  } } as unknown as TmuxOrchestrator
+  const server = startWebServer({ port: 0, host: '127.0.0.1', sessionStore: new SessionStore(),
+    claudeCwd: directory, mode: 'ws', instanceId: 'test', tmuxSessionStore: store,
+    tmuxOrchestrator: orchestrator })
+  await once(server, 'listening')
+  try {
+    const address = server.address() as { port: number }
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/tmux-sessions`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ cwd: directory, sessionId: 'stream-test', agent: 'codex', withThread: false, progress: true }),
+    })
+    expect(response.headers.get('content-type')).toContain('application/x-ndjson')
+    const reader = response.body!.getReader()
+    const first = new TextDecoder().decode((await reader.read()).value)
+    expect(first).toContain('正在启动 codex，第 1/2 次')
+    expect(store.entries()).toHaveLength(0)
+    finishCreate()
+    let remaining = ''
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      remaining += new TextDecoder().decode(value)
+    }
+    const result = remaining.trim().split('\n').map((line) => JSON.parse(line)).find((event) => event.type === 'result')
+    expect(result.result).toMatchObject({ ok: true, entry: { sessionId: 'stream-test' } })
+  } finally {
+    finishCreate()
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})

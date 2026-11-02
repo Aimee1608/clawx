@@ -87,7 +87,7 @@ export async function runTmux(opts: RunTmuxOptions = {}): Promise<void> {
     process.stdout.write(`Creating tmux ${agent} session for cwd=${cwd} via daemon http://${host}:${port}…\n`)
   }
 
-  const body = JSON.stringify({ cwd, source: 'cli', resumeUuid, label, group, agent, effort: opts.effort })
+  const body = JSON.stringify({ cwd, source: 'cli', resumeUuid, label, group, agent, effort: opts.effort, progress: true })
   const result = await new Promise<{ ok: boolean; entry?: any; error?: string }>(
     (resolve) => {
       const req = http.request(
@@ -100,15 +100,37 @@ export async function runTmux(opts: RunTmuxOptions = {}): Promise<void> {
             'content-type': 'application/json',
             'content-length': Buffer.byteLength(body),
           },
-          timeout: 60_000,
+          timeout: 150_000,
         },
         (res) => {
           let buf = ''
+          let finalResult: { ok: boolean; entry?: any; error?: string } | undefined
+          const streaming = res.headers['content-type']?.includes('application/x-ndjson')
+          const consume = (line: string) => {
+            const event = JSON.parse(line)
+            if (event.type === 'progress') process.stdout.write(`  ${event.message}\n`)
+            else if (event.type === 'result') finalResult = event.result
+          }
+          res.on('aborted', () => resolve({ ok: false, error: 'daemon 创建连接中断' }))
+          res.on('error', (err) => resolve({ ok: false, error: `daemon response failed: ${err.message}` }))
           res.setEncoding('utf8')
-          res.on('data', (c) => (buf += c))
+          res.on('data', (c) => {
+            buf += c
+            if (streaming) {
+              let index: number
+              while ((index = buf.indexOf('\n')) >= 0) {
+                const line = buf.slice(0, index)
+                buf = buf.slice(index + 1)
+                if (line.trim()) consume(line)
+              }
+            }
+          })
           res.on('end', () => {
             try {
-              resolve(JSON.parse(buf))
+              if (streaming) {
+                if (buf.trim()) consume(buf)
+                resolve(finalResult ?? { ok: false, error: '创建连接结束，但未收到结果' })
+              } else resolve(JSON.parse(buf))
             } catch {
               resolve({ ok: false, error: `bad response: ${buf.slice(0, 200)}` })
             }
@@ -120,7 +142,7 @@ export async function runTmux(opts: RunTmuxOptions = {}): Promise<void> {
       )
       req.on('timeout', () => {
         req.destroy()
-        resolve({ ok: false, error: 'daemon timeout (60s) — is it running?' })
+        resolve({ ok: false, error: 'daemon timeout (150s) — is it running?' })
       })
       req.write(body)
       req.end()
@@ -129,9 +151,9 @@ export async function runTmux(opts: RunTmuxOptions = {}): Promise<void> {
 
   if (!result.ok || !result.entry) {
     process.stderr.write(`✗ ${result.error ?? 'unknown failure'}\n`)
-    process.stderr.write(
-      `Hint: is the xclaw daemon running? Try \`curl http://${host}:${port}/api/status\`.\n`,
-    )
+    if (/daemon (?:unreachable|timeout)/.test(result.error ?? '')) {
+      process.stderr.write(`Hint: is the xclaw daemon running? Try \`curl http://${host}:${port}/api/status\`.\n`)
+    }
     process.exit(1)
   }
 
@@ -206,7 +228,7 @@ export async function runTmux(opts: RunTmuxOptions = {}): Promise<void> {
   // otherwise say "exited" and point at Resume, which respawns the same
   // conversation (--resume) and re-binds the Lark thread.
   const stillAlive =
-    spawnSync(tmuxCmd, ['has-session', '-t', entry.tmuxName], { stdio: 'ignore' }).status === 0
+    sessionState(tmuxCmd, entry.tmuxName, entry.agentKind ?? 'claude') === 'alive'
   // `entry` is the creation-time snapshot. A codex session id is minted by
   // codex itself and backfilled into the store only AFTER it starts, so at
   // creation `agentSessionId` is still pending — without a refresh the Resume
@@ -233,13 +255,16 @@ export async function runTmux(opts: RunTmuxOptions = {}): Promise<void> {
   process.stdout.write(
     stillAlive
       ? `✓ Detached from "${displayTitle}"\n`
-      : `✓ Session "${displayTitle}" exited (tmux session closed)\n`,
+      : `✓ Session "${displayTitle}" exited (agent process ended)\n`,
   )
   process.stdout.write(`  sid: ${entry.sessionId}\n`)
   process.stdout.write(`  cwd: ${entry.cwd}\n`)
   process.stdout.write(`  created: ${createdShown}\n`)
   if (stillAlive) {
     process.stdout.write(`  Re-attach:  tmux attach -t ${entry.tmuxName}\n`)
+  }
+  if (!stillAlive && spawnSync(tmuxCmd, ['has-session', '-t', entry.tmuxName], { stdio: 'ignore' }).status === 0) {
+    process.stdout.write(`  Inspect:    tmux attach -t ${entry.tmuxName}\n`)
   }
   if (resumeId) {
     // Respawns a fresh process on the SAME conversation: context preserved
@@ -449,7 +474,8 @@ function daemonJson(
   apiPath: string,
 ): Promise<{ ok: boolean; body?: unknown; error?: string }> {
   return new Promise((resolve) => {
-    const req = http.request({ host, port, path: apiPath, method, timeout: 10_000 }, (res) => {
+    const timeoutMs = method === 'POST' && apiPath === '/api/tmux-sessions' ? 150_000 : 10_000
+    const req = http.request({ host, port, path: apiPath, method, timeout: timeoutMs }, (res) => {
       let buf = ''
       res.setEncoding('utf8')
       res.on('data', (c) => (buf += c))
@@ -464,7 +490,7 @@ function daemonJson(
     req.on('error', (err) => resolve({ ok: false, error: `daemon unreachable: ${err.message}` }))
     req.on('timeout', () => {
       req.destroy()
-      resolve({ ok: false, error: 'daemon timeout (10s)' })
+      resolve({ ok: false, error: `daemon timeout (${timeoutMs / 1000}s)` })
     })
     req.end()
   })

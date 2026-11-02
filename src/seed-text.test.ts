@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatSeedText, sourceLabel } from './seed-text.js'
+import { buildBotReplyCard, formatSeedText, sourceLabel } from './seed-text.js'
 
 describe('sourceLabel', () => {
   it('labels each send source (cli carries the clawx brand — rebrand check)', () => {
@@ -56,5 +56,28 @@ describe('formatSeedText', () => {
   it('appends an <at> mention line only when mentionOpenId is given', () => {
     expect(formatSeedText({ ...base, mentionOpenId: 'ou_x' })).toContain('<at user_id="ou_x"></at>')
     expect(formatSeedText(base)).not.toContain('<at')
+  })
+})
+
+describe('final response attribution', () => {
+  it.each([
+    ['codex', 'gpt-6.1-sol', 'Codex'],
+    ['claude', 'claude-opus-4-6', 'Claude Code'],
+  ] as const)('appends a subtle footer for %s', (agentKind, model, label) => {
+    const card = buildBotReplyCard({ text: '最终结果', agentKind, model, cwd: '/workspace/团队项目/migrate-tools/' }) as any
+    expect(card.body.elements).toEqual([
+      { tag: 'markdown', content: '最终结果' },
+      { tag: 'markdown', text_size: 'notation', content: `<font color='grey'>migrate-tools · ${label} · ${model}</font>` },
+    ])
+    const progress = buildBotReplyCard({ text: '检查中', agentKind, model, cwd: '/workspace/migrate-tools', intermediate: true }) as any
+    expect(progress.body.elements).toHaveLength(1)
+  })
+
+  it('keeps the footer after truncation and marks unknown models without guessing', () => {
+    const card = buildBotReplyCard({ text: '长'.repeat(9000), agentKind: 'codex' }) as any
+    expect(card.body.elements[0].content).toContain('已截断')
+    expect(card.body.elements.at(-1).content).toContain('Codex · 模型未识别')
+    const escaped = buildBotReplyCard({ text: '结果', agentKind: 'codex', model: '<at id=all>' }) as any
+    expect(escaped.body.elements.at(-1).content).not.toContain('<at')
   })
 })

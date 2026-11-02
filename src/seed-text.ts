@@ -124,6 +124,9 @@ const TITLE_CELLS = Math.max(12, Number(process.env.CLAWX_CARD_TITLE_CELLS) || 4
 export function buildBotReplyCard(args: {
   text: string
   kind?: 'normal' | 'warning' | 'error'
+  agentKind?: AgentKind
+  model?: string
+  cwd?: string
   /** Mid-turn streamed block (not the final answer). Renders a turquoise
    * card with a 💭 header so the thread visibly separates "process" blocks
    * from the final blue reply that lands at turn-done. */
@@ -170,6 +173,11 @@ export function buildBotReplyCard(args: {
       : kind === 'warning'
         ? 'yellow'
         : 'blue'
+  const footer = args.agentKind === 'codex' ? 'Codex' : 'Claude Code'
+  const model = (args.model?.trim() || '模型未识别').replace(/\s+/g, ' ').slice(0, 200)
+  const project = args.cwd ? path.basename(args.cwd) : undefined
+  const attribution = [project, footer, model].filter(Boolean).join(' · ')
+    .replace(/[&<>]/g, (char) => `&#${char.charCodeAt(0)};`)
   return {
     schema: '2.0',
     // width_mode:'fill' → the card uses the FULL message width instead of the
@@ -185,6 +193,11 @@ export function buildBotReplyCard(args: {
           tag: 'markdown',
           content: body,
         },
+        ...(!args.intermediate && args.agentKind ? [{
+          tag: 'markdown',
+          text_size: 'notation',
+          content: `<font color='grey'>${attribution}</font>`,
+        }] : []),
       ],
     },
   }

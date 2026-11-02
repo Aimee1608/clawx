@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import http from 'node:http'
+import { execFileSync } from 'node:child_process'
 
 import { defaultTmuxSessionsPath } from './tmux-session-store.js'
 
@@ -32,7 +33,8 @@ export async function runCodexHook(): Promise<void> {
   const prompt = pick(payload, 'prompt')
   if (!sessionId) { ok(); return }
 
-  if (!isKnownCodexSession(sessionId, transcriptPath)) { ok(); return }
+  const clawxSessionId = resolveCodexHookSession(sessionId)
+  if (!clawxSessionId) { ok(); return }
 
   const apiPath = hookEventName === 'UserPromptSubmit'
     ? '/api/internal/agent-turn-start'
@@ -43,6 +45,7 @@ export async function runCodexHook(): Promise<void> {
 
   await postLocal(apiPath, {
     agentKind: 'codex',
+    clawxSessionId,
     agentSessionId: sessionId,
     transcriptPath: transcriptPath ?? '',
     prompt: prompt ?? '',
@@ -50,27 +53,21 @@ export async function runCodexHook(): Promise<void> {
   ok()
 }
 
-function isKnownCodexSession(sessionId: string, transcriptPath: string | null): boolean {
-  const p = defaultTmuxSessionsPath()
-  if (!fs.existsSync(p)) return false
+export function resolveCodexHookSession(agentSessionId: string): string | null {
+  const pane = process.env.TMUX_PANE
+  if (!pane) return null
   try {
-    const data = JSON.parse(fs.readFileSync(p, 'utf8')) as {
-      sessions?: Array<{
-        agentKind?: string
-        agentSessionId?: string
-        transcriptPath?: string
-        agentSessionPending?: boolean
-      }>
+    const tmuxName = execFileSync('tmux', ['display-message', '-p', '-t', pane, '#{session_name}'], {
+      encoding: 'utf8', timeout: 1000,
+    }).trim()
+    const data = JSON.parse(fs.readFileSync(defaultTmuxSessionsPath(), 'utf8')) as {
+      sessions?: Array<{ sessionId: string; tmuxName: string; agentKind?: string; agentSessionId?: string }>
     }
-    return !!data.sessions?.some((s) => {
-      if ((s.agentKind ?? 'claude') !== 'codex') return false
-      if (s.agentSessionId === sessionId) return true
-      if (transcriptPath && s.transcriptPath === transcriptPath) return true
-      // Allow pending Codex sessions to bind on first hook.
-      return s.agentSessionPending === true || !s.agentSessionId
-    })
+    const entry = data.sessions?.find((s) => s.agentKind === 'codex' && s.tmuxName === tmuxName)
+    if (!entry || (entry.agentSessionId && entry.agentSessionId !== agentSessionId)) return null
+    return entry.sessionId
   } catch {
-    return false
+    return null
   }
 }
 

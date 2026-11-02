@@ -147,8 +147,18 @@ export class TmuxSessionStore {
     fs.renameSync(tmp, this.persistPath)
   }
 
+  private assertUniqueAgentSession(entry: TmuxSessionEntry): void {
+    const id = entry.agentSessionId ?? entry.claudeUuid
+    if (!id) return
+    const owner = this.getByAgentSession(entry.agentKind ?? 'claude', id)
+    if (owner && owner.sessionId !== entry.sessionId) {
+      throw new Error(`agent session ${id} already belongs to ${owner.sessionId}`)
+    }
+  }
+
   upsert(entry: TmuxSessionEntry): TmuxSessionEntry {
     entry = normalizeEntry(entry)
+    this.assertUniqueAgentSession(entry)
     const existing = this.byId.get(entry.sessionId)
     if (existing) this.indexRemove(existing)
     this.indexInsert(entry)
@@ -161,6 +171,7 @@ export class TmuxSessionStore {
     const cur = this.byId.get(sessionId)
     if (!cur) throw new Error(`tmux session not found: ${sessionId}`)
     const merged: TmuxSessionEntry = normalizeEntry({ ...cur, ...patch, sessionId: cur.sessionId })
+    this.assertUniqueAgentSession(merged)
     this.indexRemove(cur)
     this.indexInsert(merged)
     this.flush()

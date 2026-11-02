@@ -558,7 +558,7 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
         // DM) becomes visible to subsequent create-session calls
         // without a daemon restart.
         userOpenId: () => cfg.userOpenId,
-        tmuxFanout: async ({ entry, assistantText }) => {
+        tmuxFanout: async ({ entry, assistantText, model }) => {
           if (!entry.threadId || !entry.rootMessageId) return
           if (!assistantText || !assistantText.trim()) return
           // Render the reply as a Lark interactive card so lark_md
@@ -579,7 +579,7 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
             (body) =>
               larkThread.postCardInThread({
                 rootMessageId: entry.rootMessageId!,
-                card: buildBotReplyCard({ text: body, kind }),
+                card: buildBotReplyCard({ text: body, kind, agentKind: entry.agentKind ?? 'claude', model, cwd: entry.cwd }),
               }),
             assistantText,
           )
