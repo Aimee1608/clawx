@@ -4,15 +4,15 @@ import { parseNewSoloCommand } from './lark-commands.js'
 
 describe('parseNewSoloCommand', () => {
   it('matches /new-solo with an alias + label', () => {
-    expect(parseNewSoloCommand('/new-solo riff 修登录bug', { inThread: true })).toEqual({
-      rest: 'riff 修登录bug',
+    expect(parseNewSoloCommand('/new-solo webapp 修登录bug', { inThread: true })).toEqual({
+      rest: 'webapp 修登录bug',
     })
   })
 
   it('keeps /new as an equivalent alias', () => {
     for (const inThread of [true, false]) {
-      expect(parseNewSoloCommand('/new riff', { inThread })).toEqual({ rest: 'riff' })
-      expect(parseNewSoloCommand('/new-solo riff', { inThread })).toEqual({ rest: 'riff' })
+      expect(parseNewSoloCommand('/new webapp', { inThread })).toEqual({ rest: 'webapp' })
+      expect(parseNewSoloCommand('/new-solo webapp', { inThread })).toEqual({ rest: 'webapp' })
     }
   })
 
@@ -29,12 +29,12 @@ describe('parseNewSoloCommand', () => {
   })
 
   it('does not fire on a sentence that merely mentions the command', () => {
-    expect(parseNewSoloCommand('顺便 /new riff 一下', { inThread: true })).toBeNull()
+    expect(parseNewSoloCommand('顺便 /new webapp 一下', { inThread: true })).toBeNull()
     expect(parseNewSoloCommand('看看 /new-solo 怎么用', { inThread: true })).toBeNull()
   })
 
   it('does not fire on lookalike words', () => {
-    for (const s of ['/newfoo', '/new-solox', '/news riff', '/new_solo riff']) {
+    for (const s of ['/newfoo', '/new-solox', '/news webapp', '/new_solo webapp']) {
       expect(parseNewSoloCommand(s, { inThread: true })).toBeNull()
     }
   })

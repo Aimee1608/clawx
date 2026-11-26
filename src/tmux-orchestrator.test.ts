@@ -101,6 +101,20 @@ describe('create() 存活校验', () => {
     await pending
   })
 
+  it.each(['GPT-6.1 Terra high', 'GPT-6.1 Sol default', 'GPT-6-Astra high'])(
+    'recognizes the ready footer for %s without retrying',
+    async (footer) => {
+      const { orch, mgr, calls } = makeOrch([true])
+      mgr.capturePane = async () => `>_ OpenAI Codex (v0.162.1)\n› Ask Codex to do anything\n  ${footer} · /tmp  ⚠ 2 warnings · f2 to view`
+      let ready = false
+      const pending = createCodex(orch).then((entry: unknown) => { ready = true; return entry })
+      await vi.advanceTimersByTimeAsync(3000)
+      expect(ready).toBe(true)
+      expect(calls.newSession).toBe(1)
+      await pending
+    },
+  )
+
   it('catches a process that dies after the old two-second check', async () => {
     const { orch, store, calls, mgr } = makeOrch([true, true])
     const started = Date.now()

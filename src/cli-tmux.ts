@@ -5,6 +5,7 @@ import http from 'node:http'
 import path from 'node:path'
 
 import type { AgentKind } from './agent-backend.js'
+import { TmuxSessionStore } from './tmux-session-store.js'
 import { locateCodexSession } from './codex-sessions.js'
 import { getDefaultAgent, loadUserConfigFile, resolveTmuxDir } from './config.js'
 
@@ -60,7 +61,9 @@ export async function runTmux(opts: RunTmuxOptions = {}): Promise<void> {
     // and every line of the jsonl includes a "cwd" field — read the
     // first line and pull it out so the user doesn't have to retype
     // the path they just lost.
-    const detected = agent === 'codex'
+    const detected = agent === 'antigravity'
+      ? new TmuxSessionStore().getByAgentSession('antigravity', resumeUuid)?.cwd
+      : agent === 'codex'
       ? locateCodexSession(resumeUuid)?.cwd
       : detectCwdFromUuid(resumeUuid)
     if (!detected) {
@@ -297,7 +300,7 @@ export async function runTmux(opts: RunTmuxOptions = {}): Promise<void> {
  * (resume session — uuid implies cwd via the jsonl). */
 export function resolveCwdArg(arg: string | undefined): string | undefined {
   if (!arg || !arg.trim()) return undefined
-  // A `tmuxDirs` alias (e.g. `xclaw solo riff`) wins over path
+  // A `tmuxDirs` alias (e.g. `xclaw solo webapp`) wins over path
   // resolution, so the same aliases work from the terminal as from
   // Feishu `/new-solo`. resolveTmuxDir returns the arg unchanged on a miss.
   const resolved = resolveTmuxDir(arg.trim(), loadUserConfigFile().tmuxDirs)
@@ -458,7 +461,7 @@ export function sessionState(tmuxCmd: string, name: string, agentKind: AgentKind
   const line = (r.stdout || '').trim().split('\n')[0] ?? ''
   const [cmd, pid, dead] = line.split(' ')
   if (dead === '1') return 'stale'
-  const expected = agentKind === 'codex' ? /codex/i : /claude/i
+  const expected = agentKind === 'antigravity' ? /(?:^|[ /])agy(?:\s|$)|antigravity/i : agentKind === 'codex' ? /codex/i : /claude/i
   if (cmd && expected.test(cmd)) return 'alive'
   // codex 是 node 起的,pane_current_command 只剩解释器名 "node",据此判 stale
   // 会让 prune 静默杀掉活着的 codex 会话。查完整命令行才认得出来。

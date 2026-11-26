@@ -35,11 +35,12 @@ describe('default agent configuration', () => {
     expect(getDefaultAgent()).toBe('claude')
     expect(resolveNewSessionAgent('codex')).toBe('codex')
     expect(resolveNewSessionAgent('invalid')).toBeNull()
+    expect(resolveNewSessionAgent('agy')).toBe('antigravity')
   })
 
   it('reports invalid configured defaults rather than silently choosing a backend', () => {
     fs.writeFileSync(configPath, JSON.stringify({ defaultAgent: 'invalid' }))
-    expect(() => getDefaultAgent()).toThrow(/must be claude or codex/)
+    expect(() => getDefaultAgent()).toThrow(/must be claude, codex or antigravity/)
   })
 
   it('applies configuration changes to new sessions and rejects invalid API updates', async () => {
@@ -69,10 +70,13 @@ describe('default agent configuration', () => {
       const next = await (await request('/api/tmux-sessions', { cwd: directory, sessionId: 'next', withThread: false })).json()
       expect(next.entry.agentKind).toBe('claude')
       expect(store.get('first')?.agentKind).toBe('codex')
+      expect((await request('/api/config', { defaultAgent: 'antigravity' })).status).toBe(200)
+      const agy = await (await request('/api/tmux-sessions', { cwd: directory, sessionId: 'agy', withThread: false })).json()
+      expect(agy.entry.agentKind).toBe('antigravity')
       for (const defaultAgent of ['invalid', '', 1, null]) {
         expect((await request('/api/config', { defaultAgent })).status).toBe(400)
       }
-      expect(JSON.parse(fs.readFileSync(configPath, 'utf8'))).toMatchObject({ defaultAgent: 'claude', machineName: 'keep' })
+      expect(JSON.parse(fs.readFileSync(configPath, 'utf8'))).toMatchObject({ defaultAgent: 'antigravity', machineName: 'keep' })
     } finally {
       server.closeAllConnections()
       await new Promise<void>((resolve) => server.close(() => resolve()))

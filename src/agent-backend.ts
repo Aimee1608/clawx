@@ -1,4 +1,4 @@
-export type AgentKind = 'claude' | 'codex'
+export type AgentKind = 'claude' | 'codex' | 'antigravity'
 
 export function normalizeAgentKind(v: unknown): AgentKind | null {
   if (v === undefined || v === null || v === '') return 'claude'
@@ -6,15 +6,16 @@ export function normalizeAgentKind(v: unknown): AgentKind | null {
   const s = v.trim().toLowerCase()
   if (!s || s === 'claude') return 'claude'
   if (s === 'codex') return 'codex'
+  if (s === 'antigravity' || s === 'agy') return 'antigravity'
   return null
 }
 
 export function agentDisplayName(kind: AgentKind | undefined): string {
-  return (kind ?? 'claude') === 'codex' ? 'Codex' : 'Claude'
+  return kind === 'antigravity' ? 'Antigravity' : kind === 'codex' ? 'Codex' : 'Claude'
 }
 
 export function agentIdLabel(kind: AgentKind | undefined): string {
-  return (kind ?? 'claude') === 'codex' ? 'codex' : 'claude'
+  return kind ?? 'claude'
 }
 
 /** Valid `claude --effort` values (adaptive-reasoning depth), shallow →

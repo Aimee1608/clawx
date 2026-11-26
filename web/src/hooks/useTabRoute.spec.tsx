@@ -18,9 +18,9 @@ afterEach(() => {
 })
 
 describe('useTabRoute', () => {
-  test('defaults to sessions:tmux when no hash', () => {
+  test('defaults to overview when no hash', () => {
     const { result } = renderHook(() => useTabRoute())
-    expect(result.current.tab).toBe('sessions:tmux')
+    expect(result.current.tab).toBe('overview')
   })
 
   test('parses two-segment #/sessions/<sub>', () => {
@@ -59,16 +59,16 @@ describe('useTabRoute', () => {
     expect(result.current.tab).toBe('sessions:claude')
   })
 
-  test('unknown hash falls back to default (sessions:tmux)', () => {
+  test('unknown hash falls back to default (overview)', () => {
     setHash('#/wat')
     const { result } = renderHook(() => useTabRoute())
-    expect(result.current.tab).toBe('sessions:tmux')
+    expect(result.current.tab).toBe('overview')
   })
 
   test('unknown sub-tab under /sessions falls back to default sub-tab', () => {
     setHash('#/sessions/wat')
     const { result } = renderHook(() => useTabRoute())
-    expect(result.current.tab).toBe('sessions:tmux')
+    expect(result.current.tab).toBe('overview')
   })
 
   test('setTab updates the hash and the returned value', () => {
@@ -91,7 +91,7 @@ describe('useTabRoute', () => {
 
   test('reacts to external hashchange', () => {
     const { result } = renderHook(() => useTabRoute())
-    expect(result.current.tab).toBe('sessions:tmux')
+    expect(result.current.tab).toBe('overview')
     act(() => {
       setHash('#/schedules')
     })

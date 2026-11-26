@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { normalizeAgentKind, type AgentKind } from './agent-backend.js'
+import type { ClaudeQuotaConfig } from './claude-quota.js'
 
 /**
  * After the tmux-only refactor, the only config layer left is the
@@ -30,6 +31,8 @@ export interface UserConfigFile {
   claudeCwd?: string
   claudeCmd?: string
   codexCmd?: string
+  antigravityCmd?: string
+  claudeQuota?: ClaudeQuotaConfig
   claudeTimeoutMs?: number
   claudeHardTimeoutMs?: number
   maxQueueSize?: number
@@ -50,7 +53,7 @@ export interface UserConfigFile {
    * have to type full paths. Feishu `/new-solo <alias> [label]` and
    * `xclaw solo <alias>` both resolve an alias here to its path.
    * Values may begin with `~/` (expanded at read time).
-   * Example: { "riff": "/home/me/agent-monorepo", "bridge": "/home/me/migrate-tools" }. */
+   * Example: { "webapp": "/home/me/web-app", "bridge": "/home/me/api-service" }. */
   tmuxDirs?: Record<string, string>
   /** Curated list of cwds that show up FIRST in the Tmux create
    * picker. Operator edits manually OR via the picker's pin button.
@@ -175,7 +178,7 @@ export function resolveTmuxDir(arg: string, dirs?: Record<string, string>): stri
 export function getDefaultAgent(): AgentKind {
   const configured = process.env.CLAWX_DEFAULT_AGENT?.trim() || loadUserConfigFile().defaultAgent || 'claude'
   const agent = normalizeAgentKind(configured)
-  if (!agent) throw new Error('defaultAgent / CLAWX_DEFAULT_AGENT must be claude or codex')
+  if (!agent) throw new Error('defaultAgent / CLAWX_DEFAULT_AGENT must be claude, codex or antigravity')
   return agent
 }
 

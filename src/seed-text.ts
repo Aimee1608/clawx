@@ -127,6 +127,7 @@ export function buildBotReplyCard(args: {
   agentKind?: AgentKind
   model?: string
   cwd?: string
+  quotaSummary?: string
   /** Mid-turn streamed block (not the final answer). Renders a turquoise
    * card with a 💭 header so the thread visibly separates "process" blocks
    * from the final blue reply that lands at turn-done. */
@@ -173,10 +174,11 @@ export function buildBotReplyCard(args: {
       : kind === 'warning'
         ? 'yellow'
         : 'blue'
-  const footer = args.agentKind === 'codex' ? 'Codex' : 'Claude Code'
+  const footer = args.agentKind === 'antigravity' ? 'Antigravity' : args.agentKind === 'codex' ? 'Codex' : 'Claude Code'
   const model = (args.model?.trim() || '模型未识别').replace(/\s+/g, ' ').slice(0, 200)
   const project = args.cwd ? path.basename(args.cwd) : undefined
-  const attribution = [project, footer, model].filter(Boolean).join(' · ')
+  const quota = args.agentKind === 'claude' ? args.quotaSummary?.trim() : undefined
+  const attribution = [[project, footer, model].filter(Boolean).join(' · '), quota].filter(Boolean).join('\n')
     .replace(/[&<>]/g, (char) => `&#${char.charCodeAt(0)};`)
   return {
     schema: '2.0',

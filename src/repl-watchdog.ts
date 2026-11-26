@@ -41,7 +41,7 @@ export function classifyReplState(capture: string): ReplState {
   }
   // Idle: the bypass-permissions footer is present but WITHOUT the
   // "esc to interrupt" hint → nothing is running, the REPL awaits input.
-  if (/bypass permissions on \(shift\+tab/i.test(t)) {
+  if (/bypass permissions on\b/i.test(t)) {
     return 'idle'
   }
   return 'unknown'
@@ -66,6 +66,7 @@ export interface ReplWatchdogDeps {
    * completed but turn-done never landed. Absent → codex sessions are not
    * watched. */
   codexHasFinishedReply?: (entry: TmuxSessionEntry) => Promise<boolean | 'error'>
+  claudeHasFinishedError?: (entry: TmuxSessionEntry) => Promise<boolean>
   /** Stall detector: ms since claude received a prompt and produced NOTHING
    * (no tool call, no message) — i.e. the transcript's last record is an
    * unanswered user prompt. null when not in that state. When this exceeds
@@ -135,6 +136,7 @@ export function createReplWatchdog(deps: ReplWatchdogDeps): ReplWatchdog {
     // (latch) dodges a mid-flush read; then replay via triggerTurnDone,
     // which routes codex to agent-turn-done. Idempotent via the handler's
     // sinceMs/lastTurnAt dedup.
+    if (entry.agentKind === 'antigravity') return
     if ((entry.agentKind ?? 'claude') === 'codex') {
       if (!deps.codexHasFinishedReply) return
       let finished: boolean | 'error' = false
@@ -166,6 +168,21 @@ export function createReplWatchdog(deps: ReplWatchdogDeps): ReplWatchdog {
         })
       }
       return
+    }
+    if (deps.claudeHasFinishedError) {
+      try {
+        if (await deps.claudeHasFinishedError(entry)) {
+          await deps.triggerTurnDone(entry)
+          latch.delete(entry.sessionId)
+          log.info('repl-watchdog: recovered claude API error', { sessionId: entry.sessionId })
+          return
+        }
+      } catch (err: any) {
+        log.warn('repl-watchdog: claude error recovery failed', {
+          sessionId: entry.sessionId,
+          err: err?.message ?? String(err),
+        })
+      }
     }
     // Only sessions with a turn in progress. turn-start sets
     // currentTurnUserMessageId; turn-done clears it. No marker → idle is

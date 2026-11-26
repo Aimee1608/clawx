@@ -22,7 +22,11 @@ import { formatSeedText, buildBotReplyCard } from './seed-text.js'
 import { downloadMessageResource } from './lark-resource.js'
 import { createReplWatchdog } from './repl-watchdog.js'
 import type { AgentKind } from './agent-backend.js'
+import { locateAntigravitySession } from './antigravity-sessions.js'
+import { agentDisplayName } from './agent-backend.js'
 import { locateCodexSession, readCodexMessagesFromRaw, hasCompletedCodexTurn } from './codex-sessions.js'
+import { classifySessionStateFromFile } from './claude-sessions.js'
+import { createClaudeQuotaClient } from './claude-quota.js'
 
 /** Lark content-audit error: message body contains PII / sensitive
  * data the Lark DLP flagged (e.g. email addresses, phone numbers,
@@ -172,6 +176,7 @@ function findTranscriptPath(uuid: string): string | undefined {
 
 function findAgentTranscriptPath(kind: AgentKind | undefined, id: string | undefined): string | undefined {
   if (!id) return undefined
+  if (kind === 'antigravity') return locateAntigravitySession(id)?.jsonlPath
   return (kind ?? 'claude') === 'codex'
     ? locateCodexSession(id)?.jsonlPath
     : findTranscriptPath(id)
@@ -287,6 +292,7 @@ interface WsConfig {
   appSecret: string
   claudeCmd: string
   codexCmd: string
+  antigravityCmd: string
   claudeCwd: string
   claudeTimeoutMs: number
   maxQueueSize: number
@@ -331,6 +337,7 @@ function loadWsConfig(overrides: CliOverrides = {}): WsConfig {
     appSecret,
     claudeCmd: process.env.CLAUDE_CMD?.trim() || fileCfg.claudeCmd || 'claude',
     codexCmd: process.env.CODEX_CMD?.trim() || fileCfg.codexCmd || 'codex',
+    antigravityCmd: fileCfg.antigravityCmd || 'agy',
     claudeCwd,
     claudeTimeoutMs: Number(process.env.CLAUDE_TIMEOUT_MS) || fileCfg.claudeTimeoutMs || 180_000,
     maxQueueSize: Number(process.env.MAX_QUEUE_SIZE) || fileCfg.maxQueueSize || 10,
@@ -441,6 +448,7 @@ function stripMentions(text: string, mentions?: Array<{ key?: string; name?: str
  */
 export async function runWs(overrides: CliOverrides = {}): Promise<void> {
   const cfg = loadWsConfig(overrides)
+  const claudeQuota = createClaudeQuotaClient(loadUserConfigFile().claudeQuota)
   log.info('ws-main starting', {
     appId: cfg.appId,
     machineName: cfg.machineName,
@@ -480,6 +488,7 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
     store: tmuxSessionStore,
     claudeCmd: cfg.claudeCmd,
     codexCmd: cfg.codexCmd,
+    antigravityCmd: cfg.antigravityCmd,
     // When a routed message gets no turn-start even after an auto-retry,
     // the REPL swallowed it (busy / stuck on a huge context). Warn the
     // user in the session's Lark thread so it isn't a silent drop.
@@ -575,11 +584,12 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
             : trimmed.startsWith('⚠️')
               ? 'warning'
               : 'normal'
+          const quotaSummary = (entry.agentKind ?? 'claude') === 'claude' ? await claudeQuota.signature() : undefined
           await postWithRetry(
             (body) =>
               larkThread.postCardInThread({
                 rootMessageId: entry.rootMessageId!,
-                card: buildBotReplyCard({ text: body, kind, agentKind: entry.agentKind ?? 'claude', model, cwd: entry.cwd }),
+                card: buildBotReplyCard({ text: body, kind, agentKind: entry.agentKind ?? 'claude', model, cwd: entry.cwd, quotaSummary }),
               }),
             assistantText,
           )
@@ -648,6 +658,13 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
             const parsed = readCodexMessagesFromRaw(raw)
             if (!hasCompletedCodexTurn(parsed, sinceMs)) return false
             return parsed.messages.at(-1)?.isError ? 'error' : true
+          },
+          claudeHasFinishedError: async (entry) => {
+            const jsonlPath = entry.transcriptPath || findAgentTranscriptPath('claude', entry.agentSessionId ?? entry.claudeUuid)
+            if (!jsonlPath) return false
+            const state = classifySessionStateFromFile(jsonlPath)
+            const sinceMs = Date.parse(entry.lastTurnAt ?? entry.createdAt) || 0
+            return state.state === 'errored' && (Date.parse(state.lastAssistantTs ?? '') || 0) > sinceMs
           },
           // Stall detector (claude): how long the transcript's LAST record has
           // been an unanswered user prompt — i.e. claude got the message and
@@ -833,7 +850,7 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
                 await larkThread
                   .postInThread({
                     rootMessageId: entry.rootMessageId,
-                    text: `⎋ 已发送中断键（${entry.agentKind === 'codex' ? 'Ctrl-C' : 'Esc'}）`,
+                    text: `⎋ 已发送中断键（${entry.agentKind === 'codex' || entry.agentKind === 'antigravity' ? 'Ctrl-C' : 'Esc'}）`,
                   })
                   .catch(() => {})
               }
@@ -1026,7 +1043,7 @@ export async function runWs(overrides: CliOverrides = {}): Promise<void> {
       // ── tmux mode: /new-solo <别名> [label] — 目录别名快捷建会话 ───
       // A short front-end for /new-tmux driven by `tmuxDirs` aliases so
       // you never type a full path. No arg → lists the aliases;
-      // `/new-solo riff 修登录bug` builds in the riff dir with that label
+      // `/new-solo webapp 修登录bug` builds in the webapp dir with that label
       // (label falls back to the alias name). `/new` is kept as an alias.
       // An unknown token that isn't a path is rejected with the alias
       // list, so a typo can't silently spawn a session in some stray
@@ -1263,7 +1280,7 @@ async function handleNewTmuxCommand(opts: {
     ``,
     `**终端 attach**: \`tmux attach -t ${entry.tmuxName}\``,
     `**话题已建好**, 直接在话题里发消息即可继续对话。`,
-    `${entry.agentKind === 'codex' ? 'Codex' : 'Claude'} 答完一轮会自动回到话题里。`,
+    `${agentDisplayName(entry.agentKind)} 答完一轮会自动回到话题里。`,
   ].join('\n')
 }
 

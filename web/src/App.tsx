@@ -72,8 +72,8 @@ export function App(): JSX.Element {
       const kind = tmuxBoundEntry.agentKind ?? 'claude'
       return {
         uuid: route.uuid,
-        fetch: (id) => kind === 'codex'
-          ? api.agentSessionMessages('codex', id)
+        fetch: (id) => kind !== 'claude'
+          ? api.agentSessionMessages(kind, id)
           : api.claudeSessionMessages(id),
       }
     }

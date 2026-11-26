@@ -5,6 +5,7 @@ import type {
   ClaudeSessionMeta,
   ConfigResponse,
   StatusResponse,
+  Schedule,
   UiMessage,
 } from '@/api'
 
@@ -13,7 +14,7 @@ export const mockStatus: StatusResponse = {
   instanceId: '17d04b13-0e28-40f9-8bd3-a63a805ab858',
   uptimeSec: 4523,
   pid: 3268275,
-  bindHost: '0.0.0.0',
+  bindHost: '127.0.0.1',
 }
 
 export const mockStatusWs: StatusResponse = {
@@ -142,3 +143,23 @@ export const mockConfigPartial: ConfigResponse = {
     larkAppSecret: { preview: '', set: false },
   },
 }
+
+export const mockSchedule: Schedule = {
+  id: 'schedule-daily-review', name: 'Daily review', cron: '0 9 * * *',
+  kind: 'prompt', agentKind: 'codex', payload: 'Review the current project status.',
+  cwd: '/home/user/workspace', enabled: true, createdAt: '2026-04-01T00:00:00Z',
+  nextRuns: ['2026-04-28T09:00:00Z'],
+}
+
+export const mockOneOffSchedule: Schedule = {
+  ...mockSchedule, id: 'schedule-reminder', name: 'One-time reminder', cron: undefined,
+  fireAt: '2026-04-28T10:00:00Z', kind: 'message', payload: 'Check the release status.',
+  nextRuns: ['2026-04-28T10:00:00Z'],
+}
+
+export const mockTimezoneSchedule: Schedule = {
+  ...mockSchedule, id: 'schedule-timezone', name: 'Morning review',
+  timezone: 'Asia/Shanghai', nextRuns: ['2026-04-28T01:00:00Z'],
+}
+
+export const mockSchedules: Schedule[] = [mockSchedule, mockOneOffSchedule, mockTimezoneSchedule]

@@ -17,7 +17,7 @@ export interface MaskedSecret {
 }
 
 export interface MaskedConfig {
-  defaultAgent?: 'claude' | 'codex'
+  defaultAgent?: 'claude' | 'codex' | 'antigravity'
   claudeCwd?: string
   claudeCmd?: string
   larkAppId?: string
@@ -70,7 +70,7 @@ export interface TmuxSessionEntry {
   sessionId: string
   tmuxName: string
   cwd: string
-  agentKind?: 'claude' | 'codex'
+  agentKind?: 'claude' | 'codex' | 'antigravity'
   agentSessionId?: string
   transcriptPath?: string
   agentSessionPending?: boolean
@@ -109,7 +109,7 @@ export interface TmuxCreateBody {
   cwd: string
   label?: string
   sessionId?: string
-  agent?: 'claude' | 'codex'
+  agent?: 'claude' | 'codex' | 'antigravity'
 }
 
 export interface CwdSuggestion {
@@ -274,7 +274,7 @@ export const api = {
   rooms: () => fetch('/api/rooms').then((r) => j<RoomsResponse>(r)),
   claudeSessionMessages: (uuid: string) =>
     fetch(`/api/claude-sessions/${encodeURIComponent(uuid)}/messages`).then((r) => j<MessagesResponse>(r)),
-  agentSessionMessages: (kind: 'claude' | 'codex', id: string) =>
+  agentSessionMessages: (kind: 'claude' | 'codex' | 'antigravity', id: string) =>
     fetch(`/api/agent-sessions/${kind}/${encodeURIComponent(id)}/messages`).then((r) => j<MessagesResponse>(r)),
   replyToSession: (uuid: string, prompt: string) =>
     fetch(`/api/claude-sessions/${encodeURIComponent(uuid)}/reply`, {

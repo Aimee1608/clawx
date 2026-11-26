@@ -6,3 +6,8 @@ dist/
 .DS_Store
 .env
 pnpm-lock.yaml
+
+.tmp/
+.env.*
+!.env.example
+web/storybook-static/

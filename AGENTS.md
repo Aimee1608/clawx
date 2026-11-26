@@ -7,7 +7,7 @@
 
 clawx 把 Claude Code 跑成**持久会话**,从终端 tmux、飞书(Lark)话题、内嵌 web 三端共用同一个会话。两种形态:
 
-- **solo** — 单 agent:一个 claude(或 codex)会话跑在持久化 tmux 里,需要一个常驻 **daemon**(靠飞书长连接收私聊/事件)。
+- **solo** — 单 agent:一个 Claude、Codex 或 Antigravity 会话跑在持久化 tmux 里,需要一个常驻 **daemon**(靠飞书长连接收私聊/事件)。
 - **room** — 多 agent 协作房间(基于 Claude Code 原生 Agent Teams),每个 bot 一个独立飞书身份,**不需要 daemon**(每个房间是独立 bridge 进程)。
 
 **开工前先问用户:要 solo、room、还是都要?** —— 这决定需要几个飞书 app(见第 3 步)。
@@ -76,6 +76,7 @@ claude 每次回复后,靠这个 hook 把结果回写给 daemon、fanout 到飞�
 ```bash
 xclaw install-tmux-hook       # 注册 Stop / UserPromptSubmit hook 到 ~/.claude/settings.json
 xclaw install-codex-hook      # 仅当用户要用 codex 后端
+xclaw install-antigravity-hook # 仅当用户要用 agy 后端
 ```
 > ⚠️ **`install-tmux-hook` 的 hook 管理有两个坑,装完务必核对 `~/.claude/settings.json`:**
 > 1. **不覆盖旧 hook**:如果已有别的 tmux-hook(旧版本 / 同机另一个类似工具),它出于幂等**不替换** —— 跑了也没用,claude 还在调旧的。
@@ -99,3 +100,5 @@ xclaw doctor          # 自检:claude CLI / 代理 / config 文件
 - **hook 装了飞书还是不回复** → 多半 hook 没指向本仓库(第 5 步的覆盖问题),或 daemon 没起。
 - **要和已有实例并存**(用户已经在跑另一套 clawx/类似工具) → 设 `CLAWX_BRAND=<名>` 跑完全隔离的实例(独立 config / data / tmux 前缀),端口用 `CLAWX_WEB_PORT` 错开(默认 `8124`)。
 - 全部环境变量见 [README.md](./README.md) 的「环境变量速查」。
+
+Web 默认仅监听 `127.0.0.1`，远程访问请使用 SSH 隧道或 VS Code 端口转发。控制台没有内置鉴权，不能直接暴露到公网。

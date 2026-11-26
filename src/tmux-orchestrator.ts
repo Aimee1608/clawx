@@ -4,6 +4,7 @@ import path from 'node:path'
 import { log } from './logger.js'
 import { getDefaultAgent } from './config.js'
 import type { AgentKind } from './agent-backend.js'
+import { readMessagesByAntigravitySessionId } from './antigravity-sessions.js'
 import { createTmuxMgr, type TmuxMgr } from './tmux-mgr.js'
 import {
   TmuxSessionStore,
@@ -65,6 +66,7 @@ export interface TmuxOrchestratorDeps {
   claudeCmd?: string
   /** Codex binary to spawn inside the REPL pane. Defaults to `codex`. */
   codexCmd?: string
+  antigravityCmd?: string
   /** Invoked when a sent message produces no turn-start within the
    * confirmation window even after one auto-retry — i.e. the REPL
    * silently swallowed the input (busy, or stuck on a huge context).
@@ -166,6 +168,10 @@ function collectClaudeRuntimeEnv(): Record<string, string> {
     'ALL_PROXY',
     'no_proxy',
     'NO_PROXY',
+    'CLAWX_WEB_PORT',
+    'CLAWX_DATA_DIR',
+    'CLAWX_BRAND',
+    'XDG_DATA_HOME',
   ]) {
     out[key] = process.env[key] ?? ''
   }
@@ -194,6 +200,7 @@ function buildAgentLaunch(args: {
   resumeId?: string
   claudeCmd: string
   codexCmd: string
+  antigravityCmd: string
   /** Claude adaptive-reasoning depth (--effort). Claude-only; validated
    * by the caller against EFFORT_LEVELS. */
   effort?: string
@@ -209,6 +216,15 @@ function buildAgentLaunch(args: {
       bannerId: id,
       pendingSessionId: false,
       cmd: `exec ${shQ(args.claudeCmd)} ${cliArgs}`,
+    }
+  }
+
+  if (args.agentKind === 'antigravity') {
+    const id = args.resumeId?.trim()
+    const resume = id ? ` --resume ${shQ(id)}` : ''
+    return {
+      agentSessionId: id, bannerId: id ?? '(pending)', pendingSessionId: !id,
+      cmd: `exec ${shQ(args.antigravityCmd)} --mode accept-edits --dangerously-skip-permissions${resume}`,
     }
   }
 
@@ -263,7 +279,7 @@ const RESPAWN_DELAY_MS = 2500
 
 async function waitSessionSettled(mgr: TmuxMgr, tmuxName: string, agentKind: AgentKind, onProgress?: (message: string) => void): Promise<void> {
   const started = Date.now()
-  const deadline = started + (agentKind === 'codex' ? CODEX_STARTUP_MS : SETTLE_MS)
+  const deadline = started + (agentKind !== 'claude' ? CODEX_STARTUP_MS : SETTLE_MS)
   let capture = ''
   let readySince = 0
   let progressAt = started
@@ -272,7 +288,18 @@ async function waitSessionSettled(mgr: TmuxMgr, tmuxName: string, agentKind: Age
     const alive = await mgr.hasSession(tmuxName)
     try { capture = await mgr.capturePane({ name: tmuxName, lines: 80 }) } catch {}
     if (!alive) throw new Error(`${agentKind} 启动即退出。\n${capture.trim().slice(-3000)}`)
-    const ready = /›/.test(capture) && /(?:\bGPT-\S+\s+(?:default|low|medium|high|xhigh|max|ultra)\s*·|model:\s+\S+)/i.test(capture)
+    if (agentKind === 'antigravity') {
+      if (/Eligibility check failed|not signed in|Select login method:|authorization code|Terms of Service & Data Use/i.test(capture)) {
+        throw new Error(`Antigravity 尚未完成登录或初始化，请先在终端运行 agy。\n${capture.trim().slice(-1500)}`)
+      }
+      if (/Do you trust the contents of this project\?/.test(capture)) {
+        await mgr.sendKey({ name: tmuxName, key: 'Enter' })
+        continue
+      }
+      if (/^>[^\n]*$/m.test(capture) && /\? for shortcuts|shift\+tab to cycle/.test(capture)) return
+      continue
+    }
+    const ready = /›/.test(capture) && /(?:\bGPT-[^\r\n·]+[ \t]+(?:default|low|medium|high|xhigh|max|ultra)[ \t]*·|model:\s+\S+)/i.test(capture)
     if (agentKind === 'codex' && ready) {
       readySince ||= Date.now()
       if (Date.now() - readySince >= CODEX_READY_STABLE_MS) return
@@ -284,6 +311,7 @@ async function waitSessionSettled(mgr: TmuxMgr, tmuxName: string, agentKind: Age
       progressAt = Date.now()
     }
   }
+  if (agentKind === 'antigravity') throw new Error(`Antigravity 在 60 秒内未就绪。\n${capture.trim().slice(-3000)}`)
   if (agentKind === 'codex') throw new Error(`Codex 在 60 秒内未就绪。\n${capture.trim().slice(-3000)}`)
 }
 
@@ -358,6 +386,7 @@ export function createTmuxOrchestrator(
   const store = deps.store
   const claudeCmd = deps.claudeCmd ?? 'claude'
   const codexCmd = deps.codexCmd ?? (process.env.CODEX_CMD?.trim() || 'codex')
+  const antigravityCmd = deps.antigravityCmd ?? 'agy'
 
   // Per-sid send queue. Multiple writers (Lark thread, web composer,
   // terminal user typing while we also automate) can race on
@@ -613,6 +642,7 @@ export function createTmuxOrchestrator(
         resumeId: opts.resumeUuid,
         claudeCmd,
         codexCmd,
+        antigravityCmd,
         effort: opts.effort,
       })
       const agentSessionId = launch.agentSessionId
@@ -633,11 +663,11 @@ export function createTmuxOrchestrator(
           cwd: opts.cwd,
           cmd,
           env: collectClaudeRuntimeEnv(),
-          retainOnExit: agentKind === 'codex',
+          retainOnExit: agentKind !== 'claude',
         })
         try {
           await waitSessionSettled(mgr, tmuxName, agentKind, opts.onProgress)
-          if (agentKind === 'codex') await mgr.setSessionOption({ name: tmuxName, option: 'remain-on-exit', value: 'failed' })
+          if (agentKind !== 'claude') await mgr.setSessionOption({ name: tmuxName, option: 'remain-on-exit', value: 'failed' })
           return null
         } catch (err) {
           return err instanceof Error ? err : new Error(String(err))
@@ -668,6 +698,9 @@ export function createTmuxOrchestrator(
         agentKind,
         agentSessionId,
         agentSessionPending: launch.pendingSessionId,
+        ...(agentKind === 'antigravity' && agentSessionId ? {
+          lastAgentStep: readMessagesByAntigravitySessionId(agentSessionId)?.messages.at(-1)?.stepIndex,
+        } : {}),
         claudeUuid,
         label: opts.label ?? prior?.label,
         createdAt: new Date().toISOString(),
@@ -726,7 +759,7 @@ export function createTmuxOrchestrator(
         armDelivery(sessionId, entry.tmuxName, text, source)
         try {
           await mgr.sendKeys({ name: entry.tmuxName, text, pressEnter: true,
-            ...(entry.agentKind === 'codex' ? { bracketedPaste: true } : {}),
+            ...(entry.agentKind === 'codex' || entry.agentKind === 'antigravity' ? { bracketedPaste: true } : {}),
           })
         } catch (err) {
           clearDelivery(sessionId)
@@ -755,7 +788,7 @@ export function createTmuxOrchestrator(
         // Esc interrupts the current generation / cancels a prompt; any
         // in-flight delivery watchdog is moot now, so drop it.
         clearDelivery(sessionId)
-        await mgr.sendKey({ name: entry.tmuxName, key: entry.agentKind === 'codex' ? 'C-c' : 'Escape' })
+        await mgr.sendKey({ name: entry.tmuxName, key: entry.agentKind === 'codex' || entry.agentKind === 'antigravity' ? 'C-c' : 'Escape' })
       })
     },
 
@@ -763,8 +796,8 @@ export function createTmuxOrchestrator(
       await withSendLock(sessionId, async () => {
         const entry = store.get(sessionId)
         if (!entry) throw new Error(`no tmux session for ${sessionId}`)
-        if (entry.agentKind === 'codex') {
-          throw new Error('codex 会话暂不支持 /model 切换')
+        if (entry.agentKind === 'codex' || entry.agentKind === 'antigravity') {
+          throw new Error(`${entry.agentKind} 会话请在终端中使用原生模型选择器`)
         }
         if (!(await mgr.hasSession(entry.tmuxName))) {
           throw new Error(`tmux session ${entry.tmuxName} is gone — recreate with create()`)

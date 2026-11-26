@@ -101,6 +101,8 @@ function printUsage(): void {
       '  xclaw room ls|revive|kill|templates Manage rooms (templates = list templates).',
       '  xclaw install-tmux-hook             Register the Stop hook in',
       '                                          ~/.claude/settings.json',
+      '  xclaw solo --agent antigravity [cwd] Start an Antigravity (agy) session.',
+      '  xclaw install-antigravity-hook     Register Antigravity callbacks.',
       '  xclaw install-codex-hook            Register Codex hooks in ~/.codex/hooks.json',
       '  xclaw web                           Open web UI in browser',
       '  xclaw doctor                        Run environment diagnostics',
@@ -129,7 +131,7 @@ async function main(): Promise<void> {
   // Must run before any module that may reach api.anthropic.com — pins
   // every downstream subprocess (claude CLI, claude-agent-sdk query)
   // to mihomo regardless of the launching shell's env.
-  if (rawCmd !== 'codex-hook') ensureProxyEnv()
+  if (rawCmd !== 'codex-hook' && rawCmd !== 'antigravity-hook') ensureProxyEnv()
 
   const { values, positionals } = parseArgs({
     allowPositionals: true,
@@ -218,6 +220,16 @@ async function main(): Promise<void> {
       await mod.runTmuxHook()
       return
     }
+    case 'antigravity-hook': {
+      const mod = await import('./antigravity-hook.js')
+      await mod.runAntigravityHook()
+      return
+    }
+    case 'install-antigravity-hook': {
+      const mod = await import('./install-antigravity-hook.js')
+      mod.runInstallAntigravityHook(process.argv.includes('--remove') ? '--remove' : positionals[1])
+      return
+    }
     case 'codex-hook': {
       const mod = await import('./codex-hook.js')
       await mod.runCodexHook()
@@ -258,7 +270,7 @@ async function main(): Promise<void> {
       const group = typeof values.group === 'string' ? values.group : undefined
       const agent = resolveNewSessionAgent(values.agent)
       if (!agent) {
-        process.stderr.write('Unknown --agent. Use `claude` or `codex`.\n')
+        process.stderr.write('Unknown --agent. Use `claude`, `codex` or `antigravity` (`agy`).\n')
         process.exit(2)
       }
       // --effort: claude adaptive-reasoning depth for this session only.
@@ -268,8 +280,8 @@ async function main(): Promise<void> {
           process.stderr.write(`✗ 未知 --effort "${effort}"。可选: ${EFFORT_LEVELS.join(' / ')}\n`)
           process.exit(2)
         }
-        if (agent === 'codex') {
-          process.stderr.write('⚠️  --effort 仅对 claude 生效，codex 会话忽略。\n')
+        if (agent !== 'claude') {
+          process.stderr.write('⚠️  --effort 仅对 claude 生效，当前后端忽略。\n')
           effort = undefined
         }
       }

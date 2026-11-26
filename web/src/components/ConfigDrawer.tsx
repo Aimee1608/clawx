@@ -88,6 +88,7 @@ export function ConfigDrawer({
                   >
                     <option value="claude">Claude Code</option>
                     <option value="codex">Codex</option>
+                    <option value="antigravity">Antigravity</option>
                   </select>
                 ) : <Input
                   id={f.key}

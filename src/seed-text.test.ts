@@ -60,16 +60,35 @@ describe('formatSeedText', () => {
 })
 
 describe('final response attribution', () => {
+  it.each(['normal', 'error'] as const)('adds remaining quota to the subtle Claude %s footer', (kind) => {
+    const quotaSummary = '剩余额度：账号1 5h 59% / 周26%；账号2 5h 65% / 周44%'
+    const card = buildBotReplyCard({ text: '结果', kind, agentKind: 'claude', model: 'claude-opus-4-6',
+      cwd: '/workspace/project', quotaSummary }) as any
+    expect(card.body.elements[0].content).toBe('结果')
+    expect(card.body.elements.at(-1)).toEqual({ tag: 'markdown', text_size: 'notation',
+      content: `<font color='grey'>project · Claude Code · claude-opus-4-6\n${quotaSummary}</font>` })
+  })
+
+  it('keeps quota off Codex and intermediate cards and escapes footer markup', () => {
+    const args = { text: '结果', quotaSummary: '<at id=all>额度</at>' }
+    const codex = buildBotReplyCard({ ...args, agentKind: 'codex' }) as any
+    expect(codex.body.elements.at(-1).content).not.toContain('额度')
+    const intermediate = buildBotReplyCard({ ...args, agentKind: 'claude', intermediate: true }) as any
+    expect(intermediate.body.elements).toHaveLength(1)
+    const claude = buildBotReplyCard({ ...args, agentKind: 'claude' }) as any
+    expect(claude.body.elements.at(-1).content).not.toContain('<at')
+  })
+
   it.each([
     ['codex', 'gpt-6.1-sol', 'Codex'],
     ['claude', 'claude-opus-4-6', 'Claude Code'],
   ] as const)('appends a subtle footer for %s', (agentKind, model, label) => {
-    const card = buildBotReplyCard({ text: '最终结果', agentKind, model, cwd: '/workspace/团队项目/migrate-tools/' }) as any
+    const card = buildBotReplyCard({ text: '最终结果', agentKind, model, cwd: '/workspace/团队项目/api-service/' }) as any
     expect(card.body.elements).toEqual([
       { tag: 'markdown', content: '最终结果' },
-      { tag: 'markdown', text_size: 'notation', content: `<font color='grey'>migrate-tools · ${label} · ${model}</font>` },
+      { tag: 'markdown', text_size: 'notation', content: `<font color='grey'>api-service · ${label} · ${model}</font>` },
     ])
-    const progress = buildBotReplyCard({ text: '检查中', agentKind, model, cwd: '/workspace/migrate-tools', intermediate: true }) as any
+    const progress = buildBotReplyCard({ text: '检查中', agentKind, model, cwd: '/workspace/api-service', intermediate: true }) as any
     expect(progress.body.elements).toHaveLength(1)
   })
 

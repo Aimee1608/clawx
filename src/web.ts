@@ -35,6 +35,7 @@ import {
   scanAllCodexSessions,
   codexSessionsRoot,
 } from './codex-sessions.js'
+import { locateAntigravitySession, readAntigravityMessagesFromRaw, readMessagesByAntigravitySessionId } from './antigravity-sessions.js'
 import { createClaudeHandle } from './claude-runner.js'
 import {
   formatSeedText,
@@ -73,16 +74,6 @@ export interface WebServerOptions {
    */
   claudeCwd: string
   port: number
-  /**
-   * Interface to bind. Defaults to `0.0.0.0` so VS Code Remote / SSH users
-   * can reach the UI at `http://<dev-box-ip>:<port>/` directly. Override
-   * with `CLAWX_WEB_HOST=127.0.0.1` to restrict to localhost.
-   *
-   * Security caveat: the UI exposes `POST /api/config` with no auth,
-   * which can write / overwrite secret fields in the user's config file.
-   * Keep the bot credentials stored only on trusted boxes, or bind to
-   * `127.0.0.1` and tunnel (ssh -L, VS Code port forward) for access.
-   */
   host?: string
   sessionStore: SessionStore
   mode: 'hub' | 'ws'
@@ -314,13 +305,14 @@ function locateAgentTranscript(
 ): { jsonlPath: string; cwd?: string } | null {
   if (fallback && fs.existsSync(fallback)) return { jsonlPath: fallback }
   if (!id) return null
-  return kind === 'codex' ? locateCodexSession(id) : locateSession(id)
+  return kind === 'antigravity' ? locateAntigravitySession(id) : kind === 'codex' ? locateCodexSession(id) : locateSession(id)
 }
 
 function readAgentMessagesById(
   kind: AgentKind,
   id: string,
 ): { messages: UiMessage[]; path: string; lastModifiedMs: number } | null {
+  if (kind === 'antigravity') return readMessagesByAntigravitySessionId(id)
   return kind === 'codex'
     ? readMessagesByCodexSessionId(id)
     : readMessagesByUuidFromProjects(id)
@@ -438,7 +430,7 @@ function validateScheduleInput(
 export function startWebServer(opts: WebServerOptions): http.Server {
   const startedAt = Date.now()
   const ASSETS_ROOT = assetsDir()
-  const boundHost = opts.host ?? '0.0.0.0'
+  const boundHost = opts.host ?? '127.0.0.1'
 
   // ── tmux session store (Phase 1 of multi-end-sync feature) ───────
   // Lives at ~/.local/share/clawx/tmux-sessions.json. Used by the
@@ -524,7 +516,7 @@ export function startWebServer(opts: WebServerOptions): http.Server {
     streamedBySession.set(sessionId, sent)
     const deadline = Date.now() + STREAM_MAX_MS
     let active = true
-    let lastSize = -1
+    let lastRevision = ''
     let inFlight: Promise<void> = Promise.resolve()
     // Identity token: ONLY the streamer currently registered in `streamers`
     // for this session may send. A superseded / orphaned streamer — left over
@@ -557,12 +549,14 @@ export function startWebServer(opts: WebServerOptions): http.Server {
       if (!located?.jsonlPath) return
       let size = 0
       try {
-        size = fs.statSync(located.jsonlPath).size
+        const stat = fs.statSync(located.jsonlPath)
+        size = stat.size
+        const revision = `${stat.ino}:${size}:${stat.mtimeMs}`
+        if (revision === lastRevision) return
+        lastRevision = revision
       } catch {
         return // file not there yet / vanished — skip this round
       }
-      if (size === lastSize) return // nothing appended since last poll
-      lastSize = size
       const start = Math.max(0, size - STREAM_TAIL_BYTES)
       let raw = ''
       try {
@@ -584,16 +578,23 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         raw = nl >= 0 ? raw.slice(nl + 1) : ''
       }
       const kind = entry.agentKind ?? 'claude'
-      const candidates = (kind === 'codex'
+      const agyMessages = kind === 'antigravity' ? readAntigravityMessagesFromRaw(raw) : []
+      const agyStart = entry.lastStartedAgentStep ?? agyMessages.filter((m) => m.role === 'user').at(-1)?.stepIndex
+      const agyEnd = agyMessages.find((m) => m.role === 'user' && m.stepIndex > (agyStart ?? Infinity))?.stepIndex ?? Infinity
+      const candidates = (kind === 'antigravity'
+        ? agyMessages.filter((m) => agyStart !== undefined && m.stepIndex > agyStart && m.stepIndex < agyEnd && m.stepIndex > (entry.lastAgentStep ?? -1))
+        : kind === 'codex'
         ? readCodexMessagesFromRaw(raw).messages
         : readClaudeMessagesFromRaw(raw)).filter(
         (m) =>
           m.role === 'assistant' &&
           !m.isError &&
           m.text.trim() !== '' &&
-          (Date.parse(m.timestamp) || 0) > sinceMs,
+          (kind === 'antigravity' || (Date.parse(m.timestamp) || 0) > sinceMs),
       )
-      const intermediate = kind === 'codex'
+      const intermediate = kind === 'antigravity'
+        ? candidates.filter((m) => m.phase === 'commentary')
+        : kind === 'codex'
         ? candidates.filter((m, i) => m.phase === 'commentary' || (!m.phase && i < candidates.length - 1))
         : candidates.slice(0, -1)
       for (const m of intermediate) {
@@ -607,6 +608,8 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         try {
           await opts.tmuxStreamBlock!({ entry, text: m.text.trim() })
         } catch (err: any) {
+          sent.delete(m.uuid)
+          lastRevision = ''
           log.warn('reply-stream: post failed', { sessionId, err: err?.message ?? String(err) })
         }
       }
@@ -664,7 +667,7 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         const incoming = (await readJsonBody(req)) as Partial<UserConfigFile>
         if (incoming && Object.hasOwn(incoming, 'defaultAgent')) {
           if (typeof incoming.defaultAgent !== 'string' || !incoming.defaultAgent.trim() || !normalizeAgentKind(incoming.defaultAgent)) {
-            sendJson(res, 400, { error: 'defaultAgent must be claude or codex' })
+            sendJson(res, 400, { error: 'defaultAgent must be claude, codex or antigravity' })
             return
           }
           incoming.defaultAgent = normalizeAgentKind(incoming.defaultAgent)!
@@ -770,7 +773,7 @@ export function startWebServer(opts: WebServerOptions): http.Server {
       // Generic agent transcript reader for tmux sessions. Codex uses
       // this because its transcripts live under ~/.codex/sessions, not
       // ~/.claude/projects.
-      const agentMsgMatch = url.pathname.match(/^\/api\/agent-sessions\/(claude|codex)\/([^/]+)\/messages$/)
+      const agentMsgMatch = url.pathname.match(/^\/api\/agent-sessions\/(claude|codex|antigravity)\/([^/]+)\/messages$/)
       if (req.method === 'GET' && agentMsgMatch) {
         const kind = agentMsgMatch[1] as AgentKind
         const id = decodeURIComponent(agentMsgMatch[2]!)
@@ -997,7 +1000,7 @@ export function startWebServer(opts: WebServerOptions): http.Server {
             : undefined
         const agentKind = resolveNewSessionAgent(body?.agent)
         if (!agentKind) {
-          sendJson(res, 400, { ok: false, error: 'agent must be claude or codex' })
+          sendJson(res, 400, { ok: false, error: 'agent must be claude, codex or antigravity' })
           return
         }
         // Claude adaptive-reasoning depth. Reject unknown values so a typo
@@ -1253,7 +1256,9 @@ export function startWebServer(opts: WebServerOptions): http.Server {
                   raw = nl >= 0 ? raw.slice(nl + 1) : ''
                 }
                 const msgs =
-                  kind === 'codex'
+                  kind === 'antigravity'
+                    ? readAntigravityMessagesFromRaw(raw)
+                    : kind === 'codex'
                     ? readCodexMessagesFromRaw(raw).messages
                     : readClaudeMessagesFromRaw(raw)
                 for (let i = msgs.length - 1; i >= 0; i--) {
@@ -1350,6 +1355,7 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         agentSessionId: string
         clawxSessionId?: string
         prompt: string
+        turnStartStep?: number
         transcriptPath?: string
       }): Promise<{ status: number; body: unknown }> {
         const trimmed = args.prompt.trim()
@@ -1369,6 +1375,14 @@ export function startWebServer(opts: WebServerOptions): http.Server {
             promptPreview: trimmed.slice(0, 40),
           })
           return { status: 200, body: { ok: true, skipped: 'synthetic' } }
+        }
+        if (args.agentKind === 'antigravity' && args.turnStartStep === undefined) {
+          const located = locateAgentTranscript('antigravity', args.agentSessionId, args.transcriptPath || entry.transcriptPath)
+          if (located) args.turnStartStep = readAntigravityMessagesFromRaw(fs.readFileSync(located.jsonlPath, 'utf8')).filter((m) => m.role === 'user').at(-1)?.stepIndex
+        }
+        if (args.agentKind === 'antigravity' && args.turnStartStep !== undefined) {
+          if ((entry.lastStartedAgentStep ?? -1) >= args.turnStartStep) return { status: 200, body: { ok: true, duplicate: true } }
+          entry = tmuxSessionStore.patch(entry.sessionId, { lastStartedAgentStep: args.turnStartStep })
         }
         tmuxOrchestrator.confirmTurnStarted(entry.sessionId)
         const knownSource = tmuxOrchestrator.peekSendSource(entry.sessionId, args.prompt)
@@ -1410,6 +1424,8 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         clawxSessionId?: string
         transcriptPath?: string
         recovered?: boolean
+        turnStartStep?: number
+        error?: string
       }): Promise<{ status: number; body: unknown }> {
         // Per-session lock: serialize so the Stop hook and the watchdog
         // recover can't both deliver the same turn (see serializeTurnDone).
@@ -1424,9 +1440,59 @@ export function startWebServer(opts: WebServerOptions): http.Server {
         clawxSessionId?: string
         transcriptPath?: string
         recovered?: boolean
+        turnStartStep?: number
+        error?: string
       }): Promise<{ status: number; body: unknown }> {
         let entry = resolveAgentHookEntry(args)
         if (!entry) return { status: 200, body: { ok: true, matched: false } }
+        if (args.agentKind === 'antigravity') {
+          const located = locateAgentTranscript('antigravity', args.agentSessionId, args.transcriptPath || entry.transcriptPath)
+          if (!located) return { status: 200, body: { ok: true, held: true } }
+          let messages = readAntigravityMessagesFromRaw(fs.readFileSync(located.jsonlPath, 'utf8'))
+          const start = args.turnStartStep ?? messages.filter((m) => m.role === 'user').at(-1)?.stepIndex
+          if (start === undefined) return { status: 200, body: { ok: true, held: true } }
+          for (let attempt = 0; attempt < 10 && !args.error && !messages.some((m) => m.role === 'assistant' && m.stepIndex > start && m.phase !== 'commentary'); attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, 300))
+            messages = readAntigravityMessagesFromRaw(fs.readFileSync(located.jsonlPath, 'utf8'))
+          }
+          const nextUser = messages.find((m) => m.role === 'user' && m.stepIndex > start)?.stepIndex ?? Infinity
+          const lastAgentStep = entry.lastAgentStep ?? -1
+          const turn = messages.filter((m) => m.stepIndex >= start && m.stepIndex < nextUser && m.stepIndex > lastAgentStep)
+          if (!turn.length) return { status: 200, body: { ok: true, duplicate: true } }
+          const replies = turn.filter((m) => m.role === 'assistant')
+          const ownsStream = entry.lastStartedAgentStep === undefined || entry.lastStartedAgentStep === start
+          const streamed = ownsStream ? await stopReplyStreamer(entry.sessionId) : new Set(streamedBySession.get(entry.sessionId))
+          if (!args.error && !replies.some((m) => m.phase !== 'commentary')) {
+            if (ownsStream) startReplyStreamer(entry, 0)
+            return { status: 200, body: { ok: true, held: true } }
+          }
+          if (STREAM_ENABLED && opts.tmuxStreamBlock) {
+            for (const m of replies.filter((m) => m.phase === 'commentary' && !streamed.has(m.uuid))) {
+              try {
+                await opts.tmuxStreamBlock({ entry, text: m.text.trim() })
+                streamed.add(m.uuid)
+              } catch (err: any) {
+                log.warn('reply-stream: post failed', { sessionId: entry.sessionId, err: err?.message ?? String(err) })
+              }
+            }
+          }
+          const assistantText = args.error ? `🚨 Antigravity API 报错 (本轮终止):\n\n${args.error}` : replies.filter((m) => !streamed.has(m.uuid)).map((m) => m.text.trim()).join('\n\n')
+          if (ownsStream) streamedBySession.delete(entry.sessionId)
+          const userText = turn.find((m) => m.role === 'user')?.text ?? null
+          tmuxOrchestrator.confirmDelivered(entry.sessionId)
+          if (entry.currentTurnReactionId && entry.currentTurnUserMessageId && opts.larkThread) {
+            try { await opts.larkThread.removeReaction({ messageId: entry.currentTurnUserMessageId, reactionId: entry.currentTurnReactionId }) } catch {}
+          }
+          const updated = tmuxSessionStore.patch(entry.sessionId, {
+            lastAgentStep: turn.at(-1)!.stepIndex, lastTurnAt: new Date().toISOString(),
+            currentTurnUserMessageId: undefined, currentTurnReactionId: undefined,
+            transcriptPath: located.jsonlPath, agentSessionPending: false,
+          })
+          const userSource = userText ? tmuxOrchestrator.identifySendSource(entry.sessionId, userText) ?? 'terminal' : 'terminal'
+          await opts.tmuxFanout?.({ entry: updated, assistantText, userText, userSource,
+            messageCount: messages.length, model: replies.at(-1)?.model })
+          return { status: 200, body: { ok: true, matched: true, sessionId: entry.sessionId, assistantChars: assistantText.length } }
+        }
         // A finished turn proves the send landed — clear the delivery watchdog
         // even if turn-start never reached us, else it warns "可能未送达" about
         // a message the agent already answered.
@@ -1600,16 +1666,17 @@ export function startWebServer(opts: WebServerOptions): http.Server {
       }
 
       if (req.method === 'POST' && url.pathname === '/api/internal/agent-turn-start') {
-        const body = (await readJsonBody(req)) as { agentKind?: unknown; agentSessionId?: unknown; clawxSessionId?: unknown; transcriptPath?: unknown; prompt?: unknown } | null
+        const body = (await readJsonBody(req)) as { agentKind?: unknown; agentSessionId?: unknown; clawxSessionId?: unknown; transcriptPath?: unknown; prompt?: unknown; turnStartStep?: unknown } | null
         const agentKind = normalizeAgentKind(body?.agentKind)
         const agentSessionId = typeof body?.agentSessionId === 'string' ? body.agentSessionId : ''
         const clawxSessionId = typeof body?.clawxSessionId === 'string' ? body.clawxSessionId : undefined
         const transcriptPath = typeof body?.transcriptPath === 'string' ? body.transcriptPath : undefined
         const prompt = typeof body?.prompt === 'string' ? body.prompt : ''
-        if (!agentKind) { sendJson(res, 400, { ok: false, error: 'agentKind must be claude or codex' }); return }
+        if (!agentKind) { sendJson(res, 400, { ok: false, error: 'agentKind must be claude, codex or antigravity' }); return }
         if (!agentSessionId) { sendJson(res, 400, { ok: false, error: 'agentSessionId required' }); return }
         sendJson(res, 200, { ok: true, queued: true })
-        void handleAgentTurnStart({ agentKind, agentSessionId, clawxSessionId, transcriptPath, prompt }).catch(
+        void handleAgentTurnStart({ agentKind, agentSessionId, clawxSessionId, transcriptPath, prompt,
+          turnStartStep: Number.isSafeInteger(body?.turnStartStep) && (body!.turnStartStep as number) >= 0 ? body!.turnStartStep as number : undefined }).catch(
           (err: any) => log.warn('agent-turn-start bg failed', { err: err?.message ?? String(err) }),
         )
         return
@@ -1630,15 +1697,17 @@ export function startWebServer(opts: WebServerOptions): http.Server {
       }
 
       if (req.method === 'POST' && url.pathname === '/api/internal/agent-turn-done') {
-        const body = (await readJsonBody(req)) as { agentKind?: unknown; agentSessionId?: unknown; clawxSessionId?: unknown; transcriptPath?: unknown; recovered?: unknown } | null
+        const body = (await readJsonBody(req)) as { agentKind?: unknown; agentSessionId?: unknown; clawxSessionId?: unknown; transcriptPath?: unknown; recovered?: unknown; turnStartStep?: unknown; error?: unknown } | null
         const agentKind = normalizeAgentKind(body?.agentKind)
         const agentSessionId = typeof body?.agentSessionId === 'string' ? body.agentSessionId : ''
         const clawxSessionId = typeof body?.clawxSessionId === 'string' ? body.clawxSessionId : undefined
         const transcriptPath = typeof body?.transcriptPath === 'string' ? body.transcriptPath : undefined
-        if (!agentKind) { sendJson(res, 400, { ok: false, error: 'agentKind must be claude or codex' }); return }
+        if (!agentKind) { sendJson(res, 400, { ok: false, error: 'agentKind must be claude, codex or antigravity' }); return }
         if (!agentSessionId) { sendJson(res, 400, { ok: false, error: 'agentSessionId required' }); return }
         sendJson(res, 200, { ok: true, queued: true })
-        void handleAgentTurnDone({ agentKind, agentSessionId, clawxSessionId, transcriptPath, recovered: body?.recovered === true }).catch(
+        void handleAgentTurnDone({ agentKind, agentSessionId, clawxSessionId, transcriptPath, recovered: body?.recovered === true,
+          turnStartStep: Number.isSafeInteger(body?.turnStartStep) && (body!.turnStartStep as number) >= 0 ? body!.turnStartStep as number : undefined,
+          error: typeof body?.error === 'string' ? body.error : undefined }).catch(
           (err: any) => log.warn('agent-turn-done bg failed', { err: err?.message ?? String(err) }),
         )
         return
@@ -1806,7 +1875,7 @@ export function startWebServer(opts: WebServerOptions): http.Server {
     }
   })
 
-  const host = opts.host ?? '0.0.0.0'
+  const host = opts.host ?? '127.0.0.1'
   server.listen(opts.port, host, () => {
     // When bound to 0.0.0.0 the printed URL uses localhost for clickability,
     // but the server is actually reachable at every local interface.
@@ -1817,5 +1886,9 @@ export function startWebServer(opts: WebServerOptions): http.Server {
     })
   })
 
+  server.on('close', () => {
+    for (const id of streamers.keys()) void stopReplyStreamer(id)
+    streamedBySession.clear()
+  })
   return server
 }

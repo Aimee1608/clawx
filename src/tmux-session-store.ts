@@ -40,6 +40,8 @@ export interface TmuxSessionEntry {
   transcriptPath?: string
   /** True while a newly-started backend hasn't written its session id yet. */
   agentSessionPending?: boolean
+  lastAgentStep?: number
+  lastStartedAgentStep?: number
   /** Claude session UUID inside the REPL. Discovered from jsonl after
    * the first turn (because claude REPL allocates it lazily); may be
    * empty until Stop-hook reports it the first time. */

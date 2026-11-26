@@ -2,7 +2,7 @@
 
 三端(飞书话题 / 终端 CLI / web 看板)共用同一个会话。下面按「你在哪」分组。
 
-> **命令名是 `xclaw`**(项目名仍是 clawx;命令改名是为了避开同名开源项目导致的 HIDS 告警)。
+> **命令名是 `xclaw`**(项目名仍是 clawx;使用独立命令名以避免与其他工具冲突)。
 
 > 约定:`<sid>` = 会话 id(形如 `cli-tmux-1a2b3c4d`);`<别名>` = 你在 config 里配的目录别名。
 
@@ -22,7 +22,7 @@
 
 | 发送 | 作用 |
 |---|---|
-| `/new-solo <别名> [label]` | 用目录别名建会话,如 `/new-solo riff 修登录bug`。`/new` 是等价别名 |
+| `/new-solo <别名> [label]` | 用目录别名建会话,如 `/new-solo webapp 修登录bug`。`/new` 是等价别名 |
 | `/new-solo` | 列出所有目录别名 + 对应路径 |
 | `/new-tmux <完整路径> [label]` | 用完整路径建会话 |
 | 自然语言(如「起个 xxx 会话 / 清理某会话」) | 交给 DM agent 处理 |
@@ -31,8 +31,8 @@
 
 ```json
 "tmuxDirs": {
-  "riff":   "/path/to/agent-monorepo",
-  "bridge": "/path/to/migrate-tools"
+  "webapp":   "/path/to/web-app",
+  "bridge": "/path/to/api-service"
 }
 ```
 

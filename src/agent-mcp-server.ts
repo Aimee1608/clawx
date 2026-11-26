@@ -7,7 +7,7 @@ import http from 'node:http'
  * MCP stdio server bundled into `clawx agent-mcp-server`. Spawned by
  * the `claude --mcp-config` subprocess that the agent driver fires for
  * each DM. Exposes a small set of "tmux session ops" tools so the
- * agent can answer asks like "list my sessions", "kill the migrate-tools
+ * agent can answer asks like "list my sessions", "kill the api-service
  * one", "create a new session under markone-moltbot" in natural
  * language.
  *
@@ -119,16 +119,17 @@ export function createAgentMcpServer(): McpServer {
   // ── create_tmux_session ─────────────────────────────────────
   server.tool(
     'create_tmux_session',
-    'Spawn a new tmux + claude REPL bound to a given cwd. Auto-creates ' +
+    'Spawn a persistent Claude, Codex or Antigravity REPL in tmux. Auto-creates ' +
       'a Lark thread when the daemon has `tmuxThreadChatId` configured. ' +
       'Use when the user says "create a session for X", "起一个 X 的会话", ' +
-      '"开个 migrate-tools 的". ' +
+      '"开个 api-service 的". ' +
       'BEHAVIOR — before calling this tool, ASK the user for a short ' +
       'descriptive title (the `label` argument). The seed message in ' +
       'Lark thread uses that as the topic name and the user will rely ' +
       'on it to tell sessions apart later. If they decline, fall back ' +
       'to a sensible default like "<basename> 调研" or skip the label.',
     {
+      agent: z.enum(['claude', 'codex', 'antigravity']).optional().describe('Agent backend; omit to use the configured default.'),
       cwd: z
         .string()
         .min(1)
@@ -139,7 +140,7 @@ export function createAgentMcpServer(): McpServer {
         .describe(
           'Short human-readable title for the session. Becomes the topic ' +
             'name in the Lark thread seed message (e.g. "dashboard SSO 调研" ' +
-            'or "agent-monorepo 重构方案"). Strongly recommended — long-lived ' +
+            'or "web-app 重构方案"). Strongly recommended — long-lived ' +
             "sessions are hard to distinguish without one. Ask the user if " +
             'they didn\'t provide one.',
         ),
@@ -154,11 +155,12 @@ export function createAgentMcpServer(): McpServer {
             '"放到 X 这个 group / 分组".',
         ),
     },
-    async ({ cwd, label, group }) => {
+    async ({ cwd, label, group, agent }) => {
       const data = await daemonRequest<unknown>('POST', '/api/tmux-sessions', {
         cwd,
         label,
         group,
+        agent,
         source: 'cli', // surfaces as "来自 终端 (xclaw tmux)" in seed
       })
       return textResult(data)

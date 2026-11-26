@@ -65,7 +65,7 @@ export function TmuxTab({ onOpenSession }: TmuxTabProps): JSX.Element {
         <div>
           <h2 className="text-lg font-semibold">Tmux Sessions</h2>
           <p className="text-sm text-muted-foreground">
-            Long-running Claude/Codex REPL panes, shared by terminal + Lark + this UI.
+            Long-running Claude/Codex/Antigravity REPL panes, shared by terminal + Lark + this UI.
           </p>
         </div>
         <Button type="button" variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
